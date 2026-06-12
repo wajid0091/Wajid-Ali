@@ -1,0 +1,6 @@
+{
+  "name": "Anu Battle",
+  "description": "A complete, high-fidelity professional Esports tournament application featuring a local Room database, wallet ledger, daily task boards, and secret CRM admin cockpit.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
