@@ -34,6 +34,11 @@ import com.example.data.models.*
 import com.example.ui.AppViewModel
 import com.example.ui.HomeTab
 import com.example.ui.Screen
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import com.example.data.ImageUploader
+import coil.compose.AsyncImage
 
 @Composable
 fun DashboardScreen(viewModel: AppViewModel) {
@@ -185,7 +190,7 @@ fun DashboardHeader(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "₹${String.format("%.1f", cashBal)}",
+                        text = "Rs.${String.format("%.1f", cashBal)}",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -413,11 +418,34 @@ fun HomeScreenBannerSlider(banners: List<BannerBanner>) {
                 shape = RoundedCornerShape(24.dp)
             ) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(gradientBanner)
-                        .padding(16.dp)
+                    modifier = Modifier.fillMaxSize()
                 ) {
+                    if (banner.imageUrl.startsWith("http")) {
+                        AsyncImage(
+                            model = banner.imageUrl,
+                            contentDescription = null,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        // Add a dark overlay so text remains readable
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.5f))
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(gradientBanner)
+                        )
+                    }
+                    
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                    ) {
                     Column(
                         modifier = Modifier
                             .fillMaxHeight()
@@ -458,6 +486,7 @@ fun HomeScreenBannerSlider(banners: List<BannerBanner>) {
                             )
                         }
                     }
+                }
                 }
             }
         }
@@ -669,11 +698,11 @@ fun StoreScreenContent(viewModel: AppViewModel) {
                 ) {
                     Column {
                         Text("Pocket Money Balance", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        Text("₹${u?.mainWallet ?: 0.0}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                        Text("Rs.${u?.mainWallet ?: 0.0}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("Winnings (Withdrawable)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        Text("₹${u?.winningWallet ?: 0.0}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3B82F6))
+                        Text("Rs.${u?.winningWallet ?: 0.0}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3B82F6))
                     }
                 }
                 Spacer(modifier = Modifier.height(6.dp))
@@ -681,7 +710,7 @@ fun StoreScreenContent(viewModel: AppViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Bonus Wallet: ₹${u?.bonusWallet ?: 0.0}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(0.7f))
+                    Text("Bonus Wallet: Rs.${u?.bonusWallet ?: 0.0}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(0.7f))
                     Text("Reserve: 0.0", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(0.7f))
                 }
 
@@ -761,7 +790,7 @@ fun StoreScreenContent(viewModel: AppViewModel) {
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                     ) {
-                        Text("₹${pkg.price}", fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color.Black)
+                        Text("Rs.${pkg.price}", fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color.Black)
                     }
                 }
             }
@@ -785,7 +814,7 @@ fun StoreScreenContent(viewModel: AppViewModel) {
                             .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Dep: ₹${dep.amount} (${dep.paymentMethod})", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Text("Dep: Rs.${dep.amount} (${dep.paymentMethod})", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
                         Text(
                             text = dep.status,
                             fontSize = 11.sp,
@@ -805,7 +834,7 @@ fun StoreScreenContent(viewModel: AppViewModel) {
                             .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Wd: ₹${wd.amount} (${wd.paymentMethod})", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Text("Wd: Rs.${wd.amount} (${wd.paymentMethod})", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
                         Text(
                             text = wd.status,
                             fontSize = 11.sp,
@@ -826,8 +855,8 @@ fun StoreScreenContent(viewModel: AppViewModel) {
     if (showDepositRequestDialog) {
         DepositRequestModal(
             onDismiss = { showDepositRequestDialog = false },
-            onSubmit = { amount, method, txId ->
-                viewModel.submitDepositRequest(amount, method, txId, null)
+            onSubmit = { amount, method, txId, screenshotUrl ->
+                viewModel.submitDepositRequest(amount, method, txId, screenshotUrl)
                 showDepositRequestDialog = false
             }
         )
@@ -1133,7 +1162,7 @@ fun ProfileScreenContent(viewModel: AppViewModel) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
                     ProfileStatItem("Matches", "${u?.matchesPlayed ?: 0}")
                     ProfileStatItem("Wins", "${u?.matchesWon ?: 0}")
-                    ProfileStatItem("Earnings", "₹${u?.totalEarnings ?: 0.0}")
+                    ProfileStatItem("Earnings", "Rs.${u?.totalEarnings ?: 0.0}")
                     ProfileStatItem("Referrals", "${u?.referralCount ?: 0}")
                 }
             }
@@ -1344,13 +1373,13 @@ fun TournamentCard(
             ) {
                 Column {
                     Text("PRIZE POOL", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-                    Text("₹${tournament.prizePool}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("Rs.${tournament.prizePool}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 }
 
                 Column {
                     Text("ENTRY FEE", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                     Text(
-                        text = if (tournament.entryFee > 0) "₹${tournament.entryFee}" else "FREE",
+                        text = if (tournament.entryFee > 0) "Rs.${tournament.entryFee}" else "FREE",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.onSurface
@@ -1444,10 +1473,28 @@ fun NotificationTray(
 }
 
 @Composable
-fun DepositRequestModal(onDismiss: () -> Unit, onSubmit: (Double, String, String) -> Unit) {
+fun DepositRequestModal(onDismiss: () -> Unit, onSubmit: (Double, String, String, String?) -> Unit) {
     var amount by remember { mutableStateOf("") }
     var txId by remember { mutableStateOf("") }
     var scaleMethod by remember { mutableStateOf("UPI / QR Code") }
+    
+    var selectedUri by remember { mutableStateOf<Uri?>(null) }
+    var uploadedUrl by remember { mutableStateOf<String?>(null) }
+    var isUploading by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            selectedUri = uri
+            ImageUploader.uploadToImgBB(context, uri, onProgress = { isUploading = it }) { url ->
+                if (url != null) {
+                    uploadedUrl = url
+                }
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1459,7 +1506,7 @@ fun DepositRequestModal(onDismiss: () -> Unit, onSubmit: (Double, String, String
                 OutlinedTextField(
                     value = amount,
                     onValueChange = { amount = it },
-                    label = { Text("Amount (INR)") },
+                    label = { Text("Amount (PKR)") },
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFFF59E0B)),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -1473,13 +1520,58 @@ fun DepositRequestModal(onDismiss: () -> Unit, onSubmit: (Double, String, String
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = { galleryLauncher.launch("image/*") },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF374151)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add image", tint = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Select Screenshot", color = Color.White)
+                }
+
+                if (isUploading) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFFF59E0B), modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Uploading screenshot...", fontSize = 11.sp)
+                    }
+                }
+
+                if (uploadedUrl != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = "Done", tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Proof uploaded successfully!", fontSize = 11.sp, color = Color(0xFF10B981))
+                    }
+                    
+                    AsyncImage(
+                        model = uploadedUrl,
+                        contentDescription = "Selected screenshot preview",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.DarkGray)
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
                     val amtVal = amount.toDoubleOrNull() ?: 0.0
-                    onSubmit(amtVal, scaleMethod, txId)
+                    onSubmit(amtVal, scaleMethod, txId, uploadedUrl)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
             ) {
@@ -1509,7 +1601,7 @@ fun WithdrawalRequestModal(onDismiss: () -> Unit, onSubmit: (Double, String, Str
                 OutlinedTextField(
                     value = amount,
                     onValueChange = { amount = it },
-                    label = { Text("Amount (INR)") },
+                    label = { Text("Amount (PKR)") },
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFFF59E0B)),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -1589,7 +1681,7 @@ fun ReferCodeModal(code: String, onDismiss: () -> Unit, onApply: (String) -> Uni
         title = { Text("Refer & Earn Arena", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Invite friends to Anu Battle! They get 10 INR on registration and you gain 15 INR + 20 coins once they set up.", fontSize = 12.sp)
+                Text("Invite friends to Anu Battle! They get 10 PKR on registration and you gain 15 PKR + 20 coins once they set up.", fontSize = 12.sp)
 
                 Row(
                     modifier = Modifier
@@ -1668,9 +1760,9 @@ fun MatchHistoryModal(viewModel: AppViewModel, onDismiss: () -> Unit) {
                                         )
                                         Text(
                                             text = if (tx.type == "Deposit" || tx.type == "Reward Credit" || tx.type == "Daily Reward" || tx.type == "Referral Bonus") {
-                                                "+₹${tx.amount}"
+                                                "+Rs.${tx.amount}"
                                             } else {
-                                                "-₹${tx.amount}"
+                                                "-Rs.${tx.amount}"
                                             },
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.Black,

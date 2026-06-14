@@ -23,6 +23,12 @@ import com.example.data.models.Tournament
 import com.example.data.models.User
 import com.example.ui.AppViewModel
 import com.example.ui.Screen
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import com.example.data.ImageUploader
+import coil.compose.AsyncImage
+import androidx.compose.ui.platform.LocalContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -154,7 +160,8 @@ fun AdminDashboardContent(viewModel: AppViewModel) {
                 selectedTabIndex = selectedTab,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.primary,
-                edgePadding = 16.dp
+                edgePadding = 16.dp,
+                modifier = Modifier.navigationBarsPadding().padding(bottom = 12.dp)
             ) {
                 tabs.forEachIndexed { idx, title ->
                     Tab(
@@ -252,9 +259,9 @@ fun AdminUsersSubPanel(viewModel: AppViewModel) {
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Main Wallet: ₹${u.mainWallet}", fontSize = 11.sp, color = Color.White.copy(0.7f))
-                                Text("Winnings: ₹${u.winningWallet}", fontSize = 11.sp, color = Color.White.copy(0.7f))
-                                Text("Bonus: ₹${u.bonusWallet}", fontSize = 11.sp, color = Color.White.copy(0.7f))
+                                Text("Main Wallet: Rs.${u.mainWallet}", fontSize = 11.sp, color = Color.White.copy(0.7f))
+                                Text("Winnings: Rs.${u.winningWallet}", fontSize = 11.sp, color = Color.White.copy(0.7f))
+                                Text("Bonus: Rs.${u.bonusWallet}", fontSize = 11.sp, color = Color.White.copy(0.7f))
                                 Text("Coins: ${u.coins}", fontSize = 11.sp, color = Color.White.copy(0.7f))
                             }
                         }
@@ -276,9 +283,9 @@ fun AdminUsersSubPanel(viewModel: AppViewModel) {
             title = { Text("Edit ledger for ${user.username}", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(value = mainW, onValueChange = { mainW = it }, label = { Text("Main Wallet Cash (₹)") })
-                    OutlinedTextField(value = winW, onValueChange = { winW = it }, label = { Text("Winning Wallet Cash (₹)") })
-                    OutlinedTextField(value = bonusW, onValueChange = { bonusW = it }, label = { Text("Bonus Wallet Cash (₹)") })
+                    OutlinedTextField(value = mainW, onValueChange = { mainW = it }, label = { Text("Main Wallet Cash (Rs.)") })
+                    OutlinedTextField(value = winW, onValueChange = { winW = it }, label = { Text("Winning Wallet Cash (Rs.)") })
+                    OutlinedTextField(value = bonusW, onValueChange = { bonusW = it }, label = { Text("Bonus Wallet Cash (Rs.)") })
                     OutlinedTextField(value = coinsVal, onValueChange = { coinsVal = it }, label = { Text("Coins Balance") })
                 }
             },
@@ -352,7 +359,7 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
                             ) {
                                 Column {
                                     Text(t.name, fontWeight = FontWeight.Bold, color = Color.White)
-                                    Text("${t.type} • Fee: ₹${t.entryFee} • Status: ${t.status}", fontSize = 11.sp, color = Color.Gray)
+                                    Text("${t.type} • Fee: Rs.${t.entryFee} • Status: ${t.status}", fontSize = 11.sp, color = Color.Gray)
                                 }
 
                                 Row {
@@ -395,8 +402,8 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
                     modifier = Modifier.verticalScroll(rememberScrollState())
                 ) {
                     OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Lobby Name") })
-                    OutlinedTextField(value = entryFee, onValueChange = { entryFee = it }, label = { Text("Entry Fee (₹)") })
-                    OutlinedTextField(value = prizePool, onValueChange = { prizePool = it }, label = { Text("Prize Pool (₹)") })
+                    OutlinedTextField(value = entryFee, onValueChange = { entryFee = it }, label = { Text("Entry Fee (Rs.)") })
+                    OutlinedTextField(value = prizePool, onValueChange = { prizePool = it }, label = { Text("Prize Pool (Rs.)") })
                     OutlinedTextField(value = slots, onValueChange = { slots = it }, label = { Text("Total Slots size") })
                     OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Match Date (yyyy-MM-dd)") })
                     OutlinedTextField(value = time, onValueChange = { time = it }, label = { Text("Match Start Time (HH:mm)") })
@@ -469,7 +476,7 @@ fun AdminDepositsSubPanel(viewModel: AppViewModel) {
                             ) {
                                 Column {
                                     Text("User ID: ${d.userId} (${d.username})", fontWeight = FontWeight.Bold, color = Color.White)
-                                    Text("Amount: ₹${d.amount} via ${d.paymentMethod}", fontSize = 11.sp, color = Color.Gray)
+                                    Text("Amount: Rs.${d.amount} via ${d.paymentMethod}", fontSize = 11.sp, color = Color.Gray)
                                     Text("Tx Code: ${d.transactionId}", fontSize = 11.sp, color = Color(0xFFF59E0B))
                                 }
 
@@ -550,7 +557,7 @@ fun AdminWithdrawSubPanel(viewModel: AppViewModel) {
                             ) {
                                 Column {
                                     Text("Holder: ${w.accountName}", fontWeight = FontWeight.Bold, color = Color.White)
-                                    Text("UserId: ${w.userId} (${w.username}) • ₹${w.amount}", fontSize = 11.sp, color = Color.Gray)
+                                    Text("UserId: ${w.userId} (${w.username}) • Rs.${w.amount}", fontSize = 11.sp, color = Color.Gray)
                                     Text("Channel: ${w.paymentMethod} | Acc: ${w.accountNumber}", fontSize = 11.sp, color = Color(0xFF3B82F6))
                                 }
 
@@ -664,20 +671,93 @@ fun AdminBannersSubPanel(viewModel: AppViewModel) {
     if (showAddBannerDialog) {
         var bannerTitle by remember { mutableStateOf("") }
         var bannerDesc by remember { mutableStateOf("") }
+        var selectedUri by remember { mutableStateOf<Uri?>(null) }
+        var uploadedUrl by remember { mutableStateOf<String?>(null) }
+        var isUploading by remember { mutableStateOf(false) }
+        val context = LocalContext.current
+
+        val galleryLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetContent()
+        ) { uri: Uri? ->
+            if (uri != null) {
+                selectedUri = uri
+                ImageUploader.uploadToImgBB(context, uri, onProgress = { isUploading = it }) { url ->
+                    if (url != null) {
+                        uploadedUrl = url
+                    }
+                }
+            }
+        }
 
         AlertDialog(
             onDismissRequest = { showAddBannerDialog = false },
             title = { Text("Assemble Sliding Banner", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(value = bannerTitle, onValueChange = { bannerTitle = it }, label = { Text("Banner Title text") })
-                    OutlinedTextField(value = bannerDesc, onValueChange = { bannerDesc = it }, label = { Text("Description text") })
+                    OutlinedTextField(
+                        value = bannerTitle, 
+                        onValueChange = { bannerTitle = it }, 
+                        label = { Text("Banner Title text") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = bannerDesc, 
+                        onValueChange = { bannerDesc = it }, 
+                        label = { Text("Description text") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Button(
+                        onClick = { galleryLauncher.launch("image/*") },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF374151)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add image", tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Select Banner Image", color = Color.White)
+                    }
+
+                    if (isUploading) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        ) {
+                            CircularProgressIndicator(color = Color(0xFFF59E0B), modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Uploading banner image...", fontSize = 11.sp, color = Color.White)
+                        }
+                    }
+
+                    if (uploadedUrl != null) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = "Done", tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Banner image uploaded successfully!", fontSize = 11.sp, color = Color(0xFF10B981))
+                        }
+                        
+                        AsyncImage(
+                            model = uploadedUrl,
+                            contentDescription = "Banner preview",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.DarkGray)
+                        )
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.adminCreateBanner(BannerBanner(title = bannerTitle, description = bannerDesc, imageUrl = "radial_bg"))
+                        val finalUrl = uploadedUrl ?: "radial_bg"
+                        viewModel.adminCreateBanner(BannerBanner(title = bannerTitle, description = bannerDesc, imageUrl = finalUrl))
                         showAddBannerDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))

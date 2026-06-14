@@ -51,8 +51,12 @@ class MainActivity : ComponentActivity() {
                     // --- Toast Trigger Hook ---
                     val context = LocalContext.current
                     LaunchedEffect(Unit) {
+                        var activeToast: Toast? = null
                         viewModel.toastMessage.collect { msg ->
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            activeToast?.cancel()
+                            activeToast = Toast.makeText(context, msg, Toast.LENGTH_SHORT).apply {
+                                show()
+                            }
                         }
                     }
 

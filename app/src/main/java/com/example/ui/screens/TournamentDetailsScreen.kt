@@ -98,7 +98,7 @@ fun TournamentDetailsScreen(viewModel: AppViewModel, tournamentId: Int) {
                     Column {
                         Text("Entry Ticket cost:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                         Text(
-                            text = if (t.entryFee > 0.0) "₹${t.entryFee}" else "FREE PLAY",
+                            text = if (t.entryFee > 0.0) "Rs.${t.entryFee}" else "FREE PLAY",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Black,
                             color = MaterialTheme.colorScheme.primary
@@ -207,7 +207,7 @@ fun TournamentDetailsScreen(viewModel: AppViewModel, tournamentId: Int) {
                 DetailsMetaItem(
                     icon = Icons.Default.Star,
                     label = "PRIZE POOL",
-                    value = "₹${t.prizePool}",
+                    value = "Rs.${t.prizePool}",
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.weight(1f)
                 )
@@ -263,7 +263,7 @@ fun TournamentDetailsScreen(viewModel: AppViewModel, tournamentId: Int) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Kill Premium:", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                            Text("₹${t.killReward} per single kill", fontSize = 13.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+                            Text("Rs.${t.killReward} per single kill", fontSize = 13.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
                         }
                         Divider(modifier = Modifier.padding(vertical = 10.dp))
                         Text("Placement Allocations:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface.copy(0.7f))

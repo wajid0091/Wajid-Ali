@@ -12,6 +12,12 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+import org.json.JSONObject
+import org.json.JSONArray
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 
 sealed interface Screen {
     object Login : Screen
@@ -124,6 +130,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         // Auto login session setup
         checkAutoLogin()
+
+        // Sync and pull live tournaments, banners, and settings from Firebase RTDB
+        syncFromFirebase()
     }
 
     // --- NAVIGATION API ---
@@ -229,7 +238,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             repository.insertNotification(Notification(
                                 userId = referrer.id,
                                 title = "Referral Reward Credited",
-                                message = "You received 15.0 INR and 20 Coins because ${user.username} joined using your code.",
+                                message = "You received 15.0 PKR and 20 Coins because ${user.username} joined using your code.",
                                 date = getCurrentDateString(),
                                 time = getCurrentTimeString(),
                                 type = "Rewards Available"
@@ -450,7 +459,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             repository.insertNotification(Notification(
                 userId = user.id,
                 title = "Joined: ${t.name}",
-                message = "Success! Entry fee of ${t.entryFee} INR deducted. Check Room credentials 10 mins before match start time.",
+                message = "Success! Entry fee of ${t.entryFee} PKR deducted. Check Room credentials 10 mins before match start time.",
                 date = getCurrentDateString(),
                 time = getCurrentTimeString(),
                 type = "Tournament Reminder"
@@ -672,7 +681,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val cost = pkg.price
             if (user.mainWallet < cost) {
-                triggerToast("Insufficient wallet balance to purchase this package! Deposit INR first.")
+                triggerToast("Insufficient wallet balance to purchase this package! Deposit PKR first.")
                 return@launch
             }
 
@@ -775,7 +784,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             repository.insertNotification(Notification(
                 userId = user.id,
                 title = "Referral Discount Applied",
-                message = "You received 10.0 INR and 15 Coins for using referral code.",
+                message = "You received 10.0 PKR and 15 Coins for using referral code.",
                 date = getCurrentDateString(),
                 time = getCurrentTimeString(),
                 type = "Rewards Available"
@@ -803,7 +812,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             repository.insertNotification(Notification(
                 userId = referrer.id,
                 title = "Referral Reward Credited",
-                message = "You received 15.0 INR and 20 Coins because ${user.username} joined using your code.",
+                message = "You received 15.0 PKR and 20 Coins because ${user.username} joined using your code.",
                 date = getCurrentDateString(),
                 time = getCurrentTimeString(),
                 type = "Rewards Available"
@@ -812,7 +821,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             // Progress task
             incrementTaskProgress(referrer.id, "REFER_FRIEND")
 
-            triggerToast("Referral applied successfully! 10.0 INR added.")
+            triggerToast("Referral applied successfully! 10.0 PKR added.")
         }
     }
 
@@ -918,7 +927,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 repository.insertNotification(Notification(
                     userId = user.id,
                     title = "Deposit Approved!",
-                    message = "Your deposit of ${req.amount} INR has been approved and credited to your Main Wallet.",
+                    message = "Your deposit of ${req.amount} PKR has been approved and credited to your Main Wallet.",
                     date = getCurrentDateString(),
                     time = getCurrentTimeString(),
                     type = "Deposit Approved"
@@ -952,7 +961,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 repository.insertNotification(Notification(
                     userId = user.id,
                     title = "Deposit REJECTED",
-                    message = "Your deposit request for ${req.amount} INR has been rejected. Details matched: Invalid Transation Code.",
+                    message = "Your deposit request for ${req.amount} PKR has been rejected. Details matched: Invalid Transation Code.",
                     date = getCurrentDateString(),
                     time = getCurrentTimeString(),
                     type = "Announcement"
@@ -987,7 +996,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 repository.insertNotification(Notification(
                     userId = user.id,
                     title = "Withdrawal Disbursed",
-                    message = "Success! Withdrawal of ${req.amount} INR approved and wired to ${req.paymentMethod} account.",
+                    message = "Success! Withdrawal of ${req.amount} PKR approved and wired to ${req.paymentMethod} account.",
                     date = getCurrentDateString(),
                     time = getCurrentTimeString(),
                     type = "Withdraw Approved"
@@ -1025,7 +1034,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 repository.insertNotification(Notification(
                     userId = user.id,
                     title = "Withdrawal REJECTED (Refunded)",
-                    message = "Your withdrawal of ${req.amount} INR was rejected. Balance refunded to your winning wallet.",
+                    message = "Your withdrawal of ${req.amount} PKR was rejected. Balance refunded to your winning wallet.",
                     date = getCurrentDateString(),
                     time = getCurrentTimeString(),
                     type = "Announcement"
@@ -1081,9 +1090,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 repository.insertCoinPackage(CoinPackage(name = "Champion Special", price = 100.0, description = "Huge pro stack of 250 coins with double multipliers", coins = 250, bonusCoins = 60))
 
                 // Seed Banners
-                repository.insertBanner(BannerBanner(title = "BGMI Esports League Is Live!", description = "Assemble your squad, lock in your registers, and play for a massive 10,000 INR Cash pool today.", imageUrl = "banner_bgmi"))
-                repository.insertBanner(BannerBanner(title = "FreeFire Solo Bermuda Arena", description = "Fight alone or perish in silence. Join our custom direct lobby now for only 15 INR.", imageUrl = "banner_ff"))
-                repository.insertBanner(BannerBanner(title = "Refer Your Buddies & Earn Real Cash!", description = "Share your unique referral link to claim 15.0 INR Main wallet cash instantly.", imageUrl = "banner_refer"))
+                repository.insertBanner(BannerBanner(title = "BGMI Esports League Is Live!", description = "Assemble your squad, lock in your registers, and play for a massive 10,000 PKR Cash pool today.", imageUrl = "banner_bgmi"))
+                repository.insertBanner(BannerBanner(title = "FreeFire Solo Bermuda Arena", description = "Fight alone or perish in silence. Join our custom direct lobby now for only 15 PKR.", imageUrl = "banner_ff"))
+                repository.insertBanner(BannerBanner(title = "Refer Your Buddies & Earn Real Cash!", description = "Share your unique referral link to claim 15.0 PKR Main wallet cash instantly.", imageUrl = "banner_refer"))
 
                 // Seed Default Tournaments
                 val t1 = Tournament(
@@ -1102,7 +1111,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     description = "The ultimate clash squad tournament for BGMI custom lobbies. Standard custom squad configurations apply. Verify client specs before registers.",
                     rules = "1. Emulator players strictly blocked. 2. Custom rooms open 15 mins early. 3. Friendly fire and macros count as instantly disqualifying.",
                     killReward = 2.0,
-                    rankReward = "1st Place: 600 INR, 2nd Place: 400 INR, 3rd Place: 200 INR",
+                    rankReward = "1st Place: 600 PKR, 2nd Place: 400 PKR, 3rd Place: 200 PKR",
                     roomId = "8429104",
                     roomPassword = "anu_battle_squad",
                     visibilityMode = "Scheduled"
@@ -1125,7 +1134,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     description = "Take the challenge and survive Bermuda. The last player alive claims the crown of the arena.",
                     rules = "1. Solo matchmaking rules. 2. Any use of game exploits will yield a permanent system ban. 3. Must fill room details 10 minutes prior.",
                     killReward = 1.5,
-                    rankReward = "1st Place: 400 INR, 2nd Place: 250 INR, 3rd Place: 150 INR",
+                    rankReward = "1st Place: 400 PKR, 2nd Place: 250 PKR, 3rd Place: 150 PKR",
                     roomId = "3948119",
                     roomPassword = "anu_battle_ff",
                     visibilityMode = "Permanent"
@@ -1148,7 +1157,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     description = "One-on-one duel arena. Show off raw aiming precision and win with 100% solo earnings.",
                     rules = "1. Custom standard rules. 2. All weapons allowed. 3. First to 15 kills wins.",
                     killReward = 5.0,
-                    rankReward = "1st: 1000 INR, 2nd: 500 INR",
+                    rankReward = "1st: 1000 PKR, 2nd: 500 PKR",
                     roomId = "1029415",
                     roomPassword = "co_duel_battle",
                     visibilityMode = "Scheduled"
@@ -1171,7 +1180,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     rules = "All tactical features enabled. Real-time logging active.",
                     description = "Premium Apex Legends Duo lobbies. High reward ratios with intense custom server speeds.",
                     killReward = 3.0,
-                    rankReward = "1st Place: 1500 INR, 2nd Place: 1000 INR",
+                    rankReward = "1st Place: 1500 PKR, 2nd Place: 1000 PKR",
                     roomId = "8829555",
                     roomPassword = "apex_anu_legends",
                     visibilityMode = "Scheduled"
@@ -1194,7 +1203,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     description = "Finished League 1 series. Match concluded.",
                     rules = "Standard Pro Rules.",
                     killReward = 5.0,
-                    rankReward = "1st: 2500 INR, 2nd: 1500 INR, 3rd: 1000 INR",
+                    rankReward = "1st: 2500 PKR, 2nd: 1500 PKR, 3rd: 1000 PKR",
                     roomId = "5592817",
                     roomPassword = "concluded_master_match",
                     visibilityMode = "Permanent"
@@ -1231,5 +1240,151 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val sYesterday = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(cal.time)
         val sTime = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(time))
         return sYesterday == sTime
+    }
+
+    // --- FIREBASE SYNC INTEGRATION ---
+    fun syncFromFirebase() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val client = OkHttpClient()
+                val request = Request.Builder()
+                    .url("https://free-fire-tour-bee66-default-rtdb.firebaseio.com/.json")
+                    .build()
+                
+                val response = client.newCall(request).execute()
+                val body = response.body?.string()
+                if (response.isSuccessful && body != null) {
+                    val json = JSONObject(body)
+                    
+                    // 1. Sync settings and parameters
+                    if (json.has("settings")) {
+                        val settingsObj = json.getJSONObject("settings")
+                        val settingsMap = jsonObjectToMap(settingsObj)
+                        for ((key, value) in settingsMap) {
+                            if (value != null) {
+                                repository.insertSetting(AppSetting(key, value.toString()))
+                            }
+                        }
+                    }
+
+                    // 2. Sync Banners/Promotions
+                    if (json.has("promotions")) {
+                        val promosObj = json.getJSONObject("promotions")
+                        val promosMap = jsonObjectToMap(promosObj)
+                        for ((fbId, data) in promosMap) {
+                            if (data is Map<*, *>) {
+                                @Suppress("UNCHECKED_CAST")
+                                val banner = mapFirebaseBanner(fbId, data as Map<String, Any?>)
+                                repository.insertBanner(banner)
+                            }
+                        }
+                    }
+
+                    // 3. Sync Tournaments
+                    if (json.has("tournaments")) {
+                        val toursObj = json.getJSONObject("tournaments")
+                        val toursMap = jsonObjectToMap(toursObj)
+                        for ((fbId, data) in toursMap) {
+                            if (data is Map<*, *>) {
+                                @Suppress("UNCHECKED_CAST")
+                                val tournament = mapFirebaseTournament(fbId, data as Map<String, Any?>)
+                                repository.insertTournament(tournament)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun jsonObjectToMap(jsonObject: JSONObject): Map<String, Any?> {
+        val map = HashMap<String, Any?>()
+        val keys = jsonObject.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            var value = jsonObject.get(key)
+            if (value is JSONObject) {
+                value = jsonObjectToMap(value)
+            } else if (value is JSONArray) {
+                value = jsonArrayToList(value)
+            } else if (value == JSONObject.NULL) {
+                value = null
+            }
+            map[key] = value
+        }
+        return map
+    }
+
+    private fun jsonArrayToList(jsonArray: JSONArray): List<Any?> {
+        val list = ArrayList<Any?>()
+        for (i in 0 until jsonArray.length()) {
+            var value = jsonArray.get(i)
+            if (value is JSONObject) {
+                value = jsonObjectToMap(value)
+            } else if (value is JSONArray) {
+                value = jsonArrayToList(value)
+            } else if (value == JSONObject.NULL) {
+                value = null
+            }
+            list.add(value)
+        }
+        return list
+    }
+
+    private fun mapFirebaseTournament(fbId: String, map: Map<String, Any?>): Tournament {
+        val name = map["name"] as? String ?: "Tournament"
+        val description = map["description"] as? String ?: ""
+        val entryFee = (map["entryFee"] as? Number)?.toDouble() ?: (map["entryFeeCoins"] as? Number)?.toDouble() ?: 0.0
+        val prizePool = (map["prizePool"] as? Number)?.toDouble() ?: (map["prizePoolCoins"] as? Number)?.toDouble() ?: 0.0
+        val maxPlayers = (map["maxPlayers"] as? Number)?.toInt() ?: 100
+        
+        val startTime = (map["startTime"] as? Number)?.toLong() ?: System.currentTimeMillis()
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(startTime))
+        val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(startTime))
+        
+        val type = map["type"] as? String ?: "Battle Royale"
+        val status = map["status"] as? String ?: "Open"
+        
+        val registeredPlayersMap = map["registeredPlayers"] as? Map<*, *>
+        val filledSlots = registeredPlayersMap?.size ?: 0
+        
+        val format = (map["tags"] as? List<*>)?.firstOrNull() as? String ?: "Solo"
+        val roomId = map["roomId"] as? String ?: ""
+        val roomPassword = map["roomPassword"] as? String ?: ""
+        
+        val localId = Math.abs(fbId.hashCode())
+        
+        return Tournament(
+            id = localId,
+            name = name,
+            type = type,
+            entryFee = entryFee,
+            prizePool = prizePool,
+            totalSlots = maxPlayers,
+            filledSlots = if (filledSlots > maxPlayers) maxPlayers else filledSlots,
+            date = dateStr,
+            time = timeStr,
+            status = if (status.isEmpty()) "Open" else status,
+            format = format,
+            description = description,
+            roomId = roomId,
+            roomPassword = roomPassword
+        )
+    }
+
+    private fun mapFirebaseBanner(fbId: String, map: Map<String, Any?>): BannerBanner {
+        val title = map["title"] as? String ?: "Promotion"
+        val description = map["description"] as? String ?: ""
+        val imageUrl = map["imageUrl"] as? String ?: ""
+        val link = map["link"] as? String ?: ""
+        return BannerBanner(
+            id = Math.abs(fbId.hashCode()),
+            title = title,
+            description = description,
+            imageUrl = imageUrl,
+            actionUrl = link
+        )
     }
 }
