@@ -97,12 +97,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val allUsers: StateFlow<List<User>> = MutableStateFlow(emptyList())
     val allDeposits: StateFlow<List<DepositRequest>> = MutableStateFlow(emptyList())
     val allWithdrawals: StateFlow<List<WithdrawalRequest>> = MutableStateFlow(emptyList())
+    val allSettings: StateFlow<List<AppSetting>> = MutableStateFlow(emptyList())
 
     init {
         val database = AppDatabase.getDatabase(application)
         repository = AppRepository(database.appDao())
 
         // Sync lists with Flows
+        viewModelScope.launch {
+            repository.allSettings.collect { (allSettings as MutableStateFlow).value = it }
+        }
         viewModelScope.launch {
             repository.allTournaments.collect { (tournaments as MutableStateFlow).value = it }
         }
@@ -133,6 +137,36 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         // Sync and pull live tournaments, banners, and settings from Firebase RTDB
         syncFromFirebase()
+    }
+
+    fun updateSetting(key: String, value: String, onComplete: ((Boolean) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.insertSetting(AppSetting(key, value))
+                
+                val client = OkHttpClient()
+                val escapedValue = JSONObject.quote(value)
+                val body = RequestBody.create(
+                    "application/json; charset=utf-8".toMediaTypeOrNull(),
+                    escapedValue
+                )
+                val request = Request.Builder()
+                    .url("https://free-fire-tour-bee66-default-rtdb.firebaseio.com/settings/$key.json")
+                    .put(body)
+                    .build()
+                
+                val response = client.newCall(request).execute()
+                val success = response.isSuccessful
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onComplete?.invoke(success)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false)
+                }
+            }
+        }
     }
 
     // --- NAVIGATION API ---

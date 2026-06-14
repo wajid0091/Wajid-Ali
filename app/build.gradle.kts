@@ -120,3 +120,27 @@ dependencies {
   "ksp"(libs.moshi.kotlin.codegen)
 }
 
+tasks.register("copyApkToWorkspace") {
+    mustRunAfter("assembleDebug")
+    val sourceFile = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+    val destFile = layout.projectDirectory.file("../AnuBattle-debug.apk")
+
+    inputs.file(sourceFile).withPropertyName("sourceFile")
+    outputs.file(destFile).withPropertyName("destFile")
+
+    doLast {
+        val src = sourceFile.get().asFile
+        val dst = destFile.asFile
+        if (src.exists()) {
+            src.copyTo(dst, overwrite = true)
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == "assembleDebug") {
+        finalizedBy("copyApkToWorkspace")
+    }
+}
+
+

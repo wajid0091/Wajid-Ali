@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.models.BannerBanner
 import com.example.data.models.Tournament
 import com.example.data.models.User
+import com.example.data.models.AppSetting
 import com.example.ui.AppViewModel
 import com.example.ui.Screen
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -134,9 +135,9 @@ fun AdminPanelScreen(viewModel: AppViewModel) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminDashboardContent(viewModel: AppViewModel) {
-    var selectedTab by remember { mutableStateOf(0) } // 0: Users, 1: Tourneys, 2: Deposits, 3: Withdrawals, 4: Banners, 5: Broadcast
+    var selectedTab by remember { mutableStateOf(0) } // 0: Users, 1: Tourneys, 2: Deposits, 3: Withdrawals, 4: Banners, 5: Broadcast, 6: Unity Ads
 
-    val tabs = listOf("Users", "Tourneys", "Deposits", "Withdraw", "Banners", "Broadcast")
+    val tabs = listOf("Users", "Tourneys", "Deposits", "Withdraw", "Banners", "Broadcast", "Unity Ads")
 
     Scaffold(
         topBar = {
@@ -186,6 +187,7 @@ fun AdminDashboardContent(viewModel: AppViewModel) {
                 3 -> AdminWithdrawSubPanel(viewModel)
                 4 -> AdminBannersSubPanel(viewModel)
                 5 -> AdminBroadcastSubPanel(viewModel)
+                6 -> AdminUnityAdsSubPanel(viewModel)
             }
         }
     }
@@ -836,6 +838,169 @@ fun AdminBroadcastSubPanel(viewModel: AppViewModel) {
                 .height(48.dp)
         ) {
             Text("PUSH BROADCAST NOW", fontWeight = FontWeight.Black, color = Color.Black)
+        }
+    }
+}
+
+// ═══════════════════════════════════════
+//   SUB PANELS: UNITY ADS INTEGRATION
+// ═══════════════════════════════════════
+@Composable
+fun AdminUnityAdsSubPanel(viewModel: AppViewModel) {
+    val settingsList by viewModel.allSettings.collectAsState()
+    
+    // Read current settings
+    val currentGameId = settingsList.find { it.key == "unity_game_id" }?.value ?: ""
+    val currentAdsEnabled = settingsList.find { it.key == "unity_ads_enabled" }?.value ?: "false"
+    val currentTestMode = settingsList.find { it.key == "unity_test_mode" }?.value ?: "true"
+    val currentInterstitialId = settingsList.find { it.key == "unity_interstitial_id" }?.value ?: ""
+    val currentRewardedId = settingsList.find { it.key == "unity_rewarded_id" }?.value ?: ""
+    val currentBannerId = settingsList.find { it.key == "unity_banner_id" }?.value ?: ""
+
+    // Form fields
+    var gameId by remember(currentGameId) { mutableStateOf(currentGameId) }
+    var adsEnabled by remember(currentAdsEnabled) { mutableStateOf(currentAdsEnabled == "true") }
+    var testMode by remember(currentTestMode) { mutableStateOf(currentTestMode == "true") }
+    var interstitialId by remember(currentInterstitialId) { mutableStateOf(currentInterstitialId) }
+    var rewardedId by remember(currentRewardedId) { mutableStateOf(currentRewardedId) }
+    var bannerId by remember(currentBannerId) { mutableStateOf(currentBannerId) }
+
+    var isSaving by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("Unity Ads CRM & Integration", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color.White)
+        Text(
+            "Configure Unity Ads parameters below. These parameters will sync with global players instantly once saved to Firebase.",
+            fontSize = 11.sp,
+            color = Color.Gray
+        )
+
+        HorizontalDivider(color = Color.Gray.copy(alpha = 0.3f))
+
+        // Toggle rows
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Show Ads System Globally", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                Text("Toggle to instantly activate/deactivate ads for all screens in the app.", fontSize = 11.sp, color = Color.Gray)
+            }
+            Switch(
+                checked = adsEnabled,
+                onCheckedChange = { adsEnabled = it }
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Unity Ads Test Mode", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                Text("Enable to receive testing/simulated Unity Ads without standard ad limits.", fontSize = 11.sp, color = Color.Gray)
+            }
+            Switch(
+                checked = testMode,
+                onCheckedChange = { testMode = it }
+            )
+        }
+
+        HorizontalDivider(color = Color.Gray.copy(alpha = 0.3f))
+
+        OutlinedTextField(
+            value = gameId,
+            onValueChange = { gameId = it },
+            label = { Text("Unity Game ID (Android)") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFF59E0B)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        OutlinedTextField(
+            value = interstitialId,
+            onValueChange = { interstitialId = it },
+            label = { Text("Interstitial Placement ID") },
+            placeholder = { Text("e.g. Interstitial_Android") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFF59E0B)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        OutlinedTextField(
+            value = rewardedId,
+            onValueChange = { rewardedId = it },
+            label = { Text("Rewarded Placement ID") },
+            placeholder = { Text("e.g. Rewarded_Android") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFF59E0B)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        OutlinedTextField(
+            value = bannerId,
+            onValueChange = { bannerId = it },
+            label = { Text("Banner Placement ID") },
+            placeholder = { Text("e.g. Banner_Android") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFF59E0B)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = {
+                isSaving = true
+                var count = 0
+                val total = 6
+                
+                fun checkComplete() {
+                    count++
+                    if (count == total) {
+                        isSaving = false
+                        viewModel.triggerToast("Unity Ads configuration updated in Firebase RTDB!")
+                    }
+                }
+
+                viewModel.updateSetting("unity_game_id", gameId) { checkComplete() }
+                viewModel.updateSetting("unity_ads_enabled", adsEnabled.toString()) { checkComplete() }
+                viewModel.updateSetting("unity_test_mode", testMode.toString()) { checkComplete() }
+                viewModel.updateSetting("unity_interstitial_id", interstitialId) { checkComplete() }
+                viewModel.updateSetting("unity_rewarded_id", rewardedId) { checkComplete() }
+                viewModel.updateSetting("unity_banner_id", bannerId) { checkComplete() }
+            },
+            enabled = !isSaving,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+        ) {
+            if (isSaving) {
+                CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+            } else {
+                Text("SAVE & UPDATE ADS SYSTEM", fontWeight = FontWeight.Black, color = Color.Black)
+            }
         }
     }
 }
