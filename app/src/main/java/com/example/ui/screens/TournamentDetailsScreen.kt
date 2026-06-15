@@ -144,27 +144,47 @@ fun TournamentDetailsScreen(viewModel: AppViewModel, tournamentId: Int) {
                             Text("REGISTERED", fontWeight = FontWeight.Black, fontSize = 14.sp)
                         }
                     } else {
-                        val isPremium = t.entryFee > 0.0
-                        val requiredAdsCount = 3
+                        val requiredAdsCount = t.adsRequired
                         val adsWatchedKey = "ads_watched_${t.id}"
                         val adsWatchedStr = allSettings.find { it.key == adsWatchedKey }?.value ?: "0"
                         val adsWatched = adsWatchedStr.toIntOrNull() ?: 0
                         val context = LocalContext.current
+                        val adsPrefs = remember(context) { context.getSharedPreferences("ads_prefs", android.content.Context.MODE_PRIVATE) }
+                        
+                        var remainingSeconds by remember { mutableStateOf(0L) }
+                        val lastWatch = remember(adsWatched) { adsPrefs.getLong("last_watched_${t.id}", 0L) }
 
-                        if (isPremium && adsWatched < requiredAdsCount && t.status == "Open") {
+                        LaunchedEffect(lastWatch) {
+                            while (true) {
+                                val elapsed = (System.currentTimeMillis() - lastWatch) / 1000
+                                val remaining = 120L - elapsed // 2 minutes / 120 seconds cooldown
+                                remainingSeconds = if (remaining > 0) remaining else 0
+                                kotlinx.coroutines.delay(1000)
+                            }
+                        }
+
+                        if (requiredAdsCount > 0 && adsWatched < requiredAdsCount && t.status == "Open") {
                             Button(
                                 onClick = {
+                                    if (remainingSeconds > 0) {
+                                        viewModel.triggerToast("Please wait for cooldown timer to complete!")
+                                        return@Button
+                                    }
                                     val activity = context as? com.example.MainActivity
                                     if (activity != null) {
                                         val rewardedId = viewModel.getSettingValue("unity_rewarded_id", "Rewarded_Android")
                                         activity.showRewardedAd(rewardedId) {
                                             viewModel.updateSetting(adsWatchedKey, (adsWatched + 1).toString())
+                                            adsPrefs.edit().putLong("last_watched_${t.id}", System.currentTimeMillis()).apply()
                                         }
                                     } else {
                                         viewModel.triggerToast("Activity context is missing.")
                                     }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                                enabled = remainingSeconds <= 0L,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (remainingSeconds > 0L) MaterialTheme.colorScheme.surfaceVariant else Color(0xFFF2994A)
+                                ),
                                 modifier = Modifier
                                     .fillMaxWidth(0.6f)
                                     .height(48.dp),
@@ -173,7 +193,13 @@ fun TournamentDetailsScreen(viewModel: AppViewModel, tournamentId: Int) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = "Watch Ad", modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    "Ads Watched: $adsWatched/$requiredAdsCount",
+                                    text = if (remainingSeconds > 0L) {
+                                        val minutes = remainingSeconds / 60
+                                        val seconds = remainingSeconds % 60
+                                        String.format("Next Ad: %02d:%02d", minutes, seconds)
+                                    } else {
+                                        "Ads Watched: $adsWatched/$requiredAdsCount"
+                                    },
                                     fontWeight = FontWeight.Black,
                                     fontSize = 12.sp
                                 )

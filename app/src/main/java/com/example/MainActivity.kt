@@ -47,6 +47,8 @@ import com.unity3d.ads.UnityAdsShowOptions
 class MainActivity : ComponentActivity(), IUnityAdsInitializationListener {
 
     private var unityGameId = "5763487"
+    private var unityRewardedPlacement = "Rewarded_Android"
+    private var unityInterstitialPlacement = "Interstitial_Android"
     private var isAdReady = false
     private var testMode = false
     
@@ -63,6 +65,16 @@ class MainActivity : ComponentActivity(), IUnityAdsInitializationListener {
         lifecycleScope.launch {
             viewModel.allSettings.collect { settingsList ->
                 val gameId = settingsList.find { it.key == "unity_game_id" }?.value ?: "5763487"
+                val rewardedId = settingsList.find { it.key == "unity_rewarded_id" }?.value ?: "Rewarded_Android"
+                val interstitialId = settingsList.find { it.key == "unity_interstitial_id" }?.value ?: "Interstitial_Android"
+                
+                if (rewardedId.isNotEmpty()) {
+                    unityRewardedPlacement = rewardedId
+                }
+                if (interstitialId.isNotEmpty()) {
+                    unityInterstitialPlacement = interstitialId
+                }
+                
                 if (!UnityAds.isInitialized && gameId.isNotEmpty()) {
                     unityGameId = gameId
                     UnityAds.initialize(applicationContext, unityGameId, testMode, this@MainActivity)
@@ -126,10 +138,12 @@ class MainActivity : ComponentActivity(), IUnityAdsInitializationListener {
     private fun preloadAds() {
         val loadListener = object : com.unity3d.ads.IUnityAdsLoadListener {
             override fun onUnityAdsAdLoaded(placementId: String) {}
-            override fun onUnityAdsFailedToLoad(placementId: String, error: UnityAds.UnityAdsLoadError, message: String) {}
+            override fun onUnityAdsFailedToLoad(placementId: String, error: UnityAds.UnityAdsLoadError, message: String) {
+                // Toast helpful message but only if loading fails
+            }
         }
-        UnityAds.load("Rewarded_Android", loadListener)
-        UnityAds.load("Interstitial_Android", loadListener)
+        UnityAds.load(unityRewardedPlacement, loadListener)
+        UnityAds.load(unityInterstitialPlacement, loadListener)
     }
 
     private var lastInterstitialTime = 0L

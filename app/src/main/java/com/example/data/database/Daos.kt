@@ -146,6 +146,9 @@ interface AppDao {
     @Update
     suspend fun updateDailyTask(task: DailyTask)
 
+    @Delete
+    suspend fun deleteDailyTask(task: DailyTask)
+
     @Query("DELETE FROM daily_tasks WHERE userId = :userId")
     suspend fun deleteTasksForUser(userId: Int)
 

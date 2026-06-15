@@ -135,9 +135,9 @@ fun AdminPanelScreen(viewModel: AppViewModel) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminDashboardContent(viewModel: AppViewModel) {
-    var selectedTab by remember { mutableStateOf(0) } // 0: Users, 1: Tourneys, 2: Deposits, 3: Withdrawals, 4: Banners, 5: Broadcast, 6: Unity Ads
+    var selectedTab by remember { mutableStateOf(0) } // 0: Users, 1: Tourneys, 2: Deposits, 3: Withdrawals, 4: Banners, 5: Broadcast, 6: Unity Ads, 7: Task Rewards
 
-    val tabs = listOf("Users", "Tourneys", "Deposits", "Withdraw", "Banners", "Broadcast", "Unity Ads")
+    val tabs = listOf("Users", "Tourneys", "Deposits", "Withdraw", "Banners", "Broadcast", "Unity Ads", "Task Rewards")
 
     Scaffold(
         topBar = {
@@ -188,6 +188,7 @@ fun AdminDashboardContent(viewModel: AppViewModel) {
                 4 -> AdminBannersSubPanel(viewModel)
                 5 -> AdminBroadcastSubPanel(viewModel)
                 6 -> AdminUnityAdsSubPanel(viewModel)
+                7 -> AdminTaskRewardsSubPanel(viewModel)
             }
         }
     }
@@ -395,6 +396,7 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
         var entryFee by remember { mutableStateOf(if(editingTournament != null && editingTournament?.entryFee!! > 0) editingTournament?.entryFee.toString() else "") }
         var prizePool by remember { mutableStateOf(if(editingTournament != null && editingTournament?.prizePool!! > 0) editingTournament?.prizePool.toString() else "") }
         var slots by remember { mutableStateOf(editingTournament?.totalSlots?.toString() ?: "20") }
+        var adsRequired by remember { mutableStateOf(editingTournament?.adsRequired?.toString() ?: "0") }
         var date by remember { mutableStateOf(editingTournament?.date ?: viewModel.getCurrentDateString()) }
         var time by remember { mutableStateOf(editingTournament?.time ?: "18:00") }
         var mapType by remember { mutableStateOf(editingTournament?.mapType ?: "Bermuda") }
@@ -497,6 +499,7 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
                     OutlinedTextField(value = roomId, onValueChange = { roomId = it }, label = { Text("Lobby ID (Room ID)") })
                     OutlinedTextField(value = roomPwd, onValueChange = { roomPwd = it }, label = { Text("Lobby Entry Password") })
                     OutlinedTextField(value = visMode, onValueChange = { visMode = it }, label = { Text("Visibility: 'Permanent' or 'Scheduled'") })
+                    OutlinedTextField(value = adsRequired, onValueChange = { adsRequired = it }, label = { Text("Required Ads to Join") })
                 }
             },
             confirmButton = {
@@ -506,7 +509,7 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
                             id = editingTournament?.id ?: 0,
                             name = name.ifEmpty { "BGMI Elite Cup" },
                             type = type,
-                            entryFee = entryFee.toDoubleOrNull() ?: 10.0,
+                            entryFee = entryFee.toDoubleOrNull() ?: 0.0,
                             prizePool = prizePool.toDoubleOrNull() ?: 0.0,
                             totalSlots = slots.toIntOrNull() ?: 20,
                             filledSlots = editingTournament?.filledSlots ?: 0,
@@ -518,7 +521,8 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
                             roomPassword = roomPwd,
                             visibilityMode = visMode,
                             imageUrl = imageUrl,
-                            description = editingTournament?.description ?: "Admin assembled tournament for Anu Battle league."
+                            description = editingTournament?.description ?: "Admin assembled tournament for Anu Battle league.",
+                            adsRequired = adsRequired.toIntOrNull() ?: 0
                         )
                         if (editingTournament != null) {
                             viewModel.adminUpdateTournament(newT)
@@ -1229,5 +1233,146 @@ fun AdminUnityAdsSubPanel(viewModel: AppViewModel) {
                 Text("SAVE & UPDATE CONFIGS", fontWeight = FontWeight.Black, color = Color.Black)
             }
         }
+    }
+}
+
+@Composable
+fun AdminTaskRewardsSubPanel(viewModel: AppViewModel) {
+    val templates by viewModel.taskTemplates.collectAsState()
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var editingTemplate by remember { mutableStateOf<Map<String, Any>?>(null) }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Dynamic Task Rewards Templates", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color.White)
+            Button(
+                onClick = { 
+                    editingTemplate = null
+                    showCreateDialog = true 
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Task", tint = Color.Black, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("ADD TASK", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (templates.isEmpty()) {
+            Text("No task templates found.", color = Color.Gray)
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(templates) { t ->
+                    val typeId = t["id"] as? String ?: ""
+                    val title = t["title"] as? String ?: ""
+                    val targetCount = (t["targetCount"] as? Number)?.toInt() ?: 0
+                    val rewardCoins = (t["rewardCoins"] as? Number)?.toInt() ?: 0
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2937)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(title, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                                Text("ID: $typeId • Reward: $rewardCoins Coins • Goal: $targetCount", fontSize = 11.sp, color = Color.Gray)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                IconButton(onClick = {
+                                    editingTemplate = t
+                                    showCreateDialog = true
+                                }) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Edit Task", tint = Color(0xFFF59E0B), modifier = Modifier.size(18.dp))
+                                }
+                                IconButton(onClick = {
+                                    viewModel.adminDeleteTaskTemplate(typeId)
+                                }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete Task", tint = Color.Red, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCreateDialog) {
+        var tid by remember { mutableStateOf(editingTemplate?.get("id") as? String ?: "") }
+        var title by remember { mutableStateOf(editingTemplate?.get("title") as? String ?: "") }
+        var targetCount by remember { mutableStateOf(editingTemplate?.get("targetCount")?.toString() ?: "5") }
+        var rewardCoins by remember { mutableStateOf(editingTemplate?.get("rewardCoins")?.toString() ?: "10") }
+
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            title = { Text(if (editingTemplate != null) "Edit Task Template" else "Create Task Template", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = tid,
+                        onValueChange = { if (editingTemplate == null) tid = it },
+                        label = { Text("Task ID / Type (e.g. WATCH_AD_10)") },
+                        enabled = editingTemplate == null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("Task Title / Description") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = targetCount,
+                        onValueChange = { targetCount = it },
+                        label = { Text("Target Goal Count") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = rewardCoins,
+                        onValueChange = { rewardCoins = it },
+                        label = { Text("Reward Coins Value") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (tid.isEmpty() || title.isEmpty()) {
+                            viewModel.triggerToast("Please fill all required inputs!")
+                            return@Button
+                        }
+                        val tGoal = targetCount.toIntOrNull() ?: 1
+                        val rCoins = rewardCoins.toIntOrNull() ?: 0
+                        if (editingTemplate != null) {
+                            viewModel.adminUpdateTaskTemplate(tid, title, tGoal, rCoins)
+                        } else {
+                            viewModel.adminCreateTaskTemplate(tid, title, tGoal, rCoins)
+                        }
+                        showCreateDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
+                ) {
+                    Text("SAVE TEMPLATE", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                Button(onClick = { showCreateDialog = false }) {
+                    Text("CANCEL")
+                }
+            }
+        )
     }
 }

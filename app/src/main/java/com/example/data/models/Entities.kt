@@ -14,10 +14,10 @@ data class User(
     val referralCode: String,
     val referredBy: String? = null,
     val isVerified: Boolean = false,
-    val mainWallet: Double = 100.0, // default sign up bonus starter amounts for easy UI testing
+    val mainWallet: Double = 0.0,
     val winningWallet: Double = 0.0,
-    val bonusWallet: Double = 10.0,
-    val coins: Int = 100,
+    val bonusWallet: Double = 0.0,
+    val coins: Int = 0,
     val matchesPlayed: Int = 0,
     val matchesWon: Int = 0,
     val totalEarnings: Double = 0.0,
@@ -47,7 +47,8 @@ data class Tournament(
     val roomPassword: String = "",
     val visibilityMode: String = "Scheduled", // "Permanent", "Scheduled"
     val isRoomVisibleManuallyOverride: Boolean = false,
-    val imageUrl: String = ""
+    val imageUrl: String = "",
+    val adsRequired: Int = 0
 )
 
 @Entity(tableName = "joined_tournaments")

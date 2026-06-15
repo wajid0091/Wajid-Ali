@@ -988,6 +988,10 @@ fun RewardsScreenContent(viewModel: AppViewModel) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        val dailyClaim by viewModel.userDailyClaim.collectAsState()
+        val isClaimedToday = dailyClaim?.let { viewModel.isSameDay(it.lastClaimedTime, System.currentTimeMillis()) } ?: false
+        val currentStreak = dailyClaim?.claimStreak ?: 0
+
         val rewardsList = listOf(5, 5, 5, 10, 5, 5, 15)
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -995,38 +999,47 @@ fun RewardsScreenContent(viewModel: AppViewModel) {
         ) {
             rewardsList.forEachIndexed { index, coinsAmt ->
                 val day = index + 1
+                val isDayClaimed = day < currentStreak || (day == currentStreak && isClaimedToday)
+
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(8.dp))
                         .background(
-                            if (day == 7) Color(0xFFD97706) else MaterialTheme.colorScheme.surface
+                            if (isDayClaimed) Color(0xFF10B981) // Claimed turning beautiful green!
+                            else if (day == 7) Color(0xFFD97706) 
+                            else MaterialTheme.colorScheme.surface
                         )
-                        .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .border(
+                            width = 1.dp,
+                            color = if (isDayClaimed) Color(0xFF059669) 
+                                    else Color(0xFFF59E0B).copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(8.dp)
+                        )
                         .clickable { viewModel.claimDailyReward(day, coinsAmt) }
                         .padding(vertical = 10.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            "Day $day",
+                            text = "Day $day",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (day == 7) Color.White else MaterialTheme.colorScheme.onSurface
+                            color = if (isDayClaimed || day == 7) Color.White else MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Icon(
-                            imageVector = Icons.Default.Star,
+                            imageVector = if (isDayClaimed) Icons.Default.CheckCircle else Icons.Default.Star,
                             contentDescription = null,
-                            tint = if (day == 7) Color.White else Color(0xFFF59E0B),
+                            tint = if (isDayClaimed || day == 7) Color.White else Color(0xFFF59E0B),
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            "$coinsAmt Coins",
-                            fontSize = 10.sp,
+                            text = if (isDayClaimed) "CLAIMED" else "$coinsAmt Coins",
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Black,
-                            color = if (day == 7) Color.White else Color(0xFFF59E0B)
+                            color = if (isDayClaimed || day == 7) Color.White else Color(0xFFF59E0B)
                         )
                     }
                 }

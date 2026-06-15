@@ -90,6 +90,7 @@ class AppRepository(private val appDao: AppDao) {
     suspend fun insertDailyTask(task: DailyTask) = appDao.insertDailyTask(task)
     suspend fun insertDailyTasks(tasks: List<DailyTask>) = appDao.insertDailyTasks(tasks)
     suspend fun updateDailyTask(task: DailyTask) = appDao.updateDailyTask(task)
+    suspend fun deleteDailyTask(task: DailyTask) = appDao.deleteDailyTask(task)
     suspend fun deleteTasksForUser(userId: Int) = appDao.deleteTasksForUser(userId)
 
     // --- NOTIFICATIONS ---

@@ -246,7 +246,7 @@ fun RegisterScreen(viewModel: AppViewModel) {
                     // Register Action
                     Button(
                         onClick = {
-                            val userEmail = email.trim()
+                            val userEmail = email.trim().lowercase()
                             val userName = username.trim()
                             if (userName.length < 3) {
                                 viewModel.triggerToast("Username must be at least 3 characters!")
@@ -281,8 +281,8 @@ fun RegisterScreen(viewModel: AppViewModel) {
                             .testTag("submit_button")
                     ) {
                         Text(
-                            text = "CLAIM STARTER BALANCE & REGISTER",
-                            fontSize = 13.sp,
+                            text = "REGISTER",
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }

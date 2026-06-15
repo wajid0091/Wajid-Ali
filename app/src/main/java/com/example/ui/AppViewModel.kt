@@ -93,6 +93,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _userDailyTasks = MutableStateFlow<List<DailyTask>>(emptyList())
     val userDailyTasks: StateFlow<List<DailyTask>> = _userDailyTasks.asStateFlow()
 
+    private val _taskTemplates = MutableStateFlow<List<Map<String, Any>>>(emptyList())
+    val taskTemplates: StateFlow<List<Map<String, Any>>> = _taskTemplates.asStateFlow()
+
+    private val _userDailyClaim = MutableStateFlow<DailyRewardClaim?>(null)
+    val userDailyClaim: StateFlow<DailyRewardClaim?> = _userDailyClaim.asStateFlow()
+
     // Simulated Ad Play State Flows
     private val _isShowingAd = MutableStateFlow(false)
     val isShowingAd: StateFlow<Boolean> = _isShowingAd.asStateFlow()
@@ -138,6 +144,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         // Seed initial database
         seedDatabaseIfNeeded()
+
+        // Listen to dynamic task templates from Firebase
+        listenToTaskTemplates()
 
         // Auto login session setup
         checkAutoLogin()
@@ -272,8 +281,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun registerUser(user: User, onResult: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
+            val normalizedEmail = user.email.trim().lowercase()
+            val normalizedUser = user.copy(email = normalizedEmail)
             // First check local
-            val existing = repository.getUserByEmail(user.email)
+            val existing = repository.getUserByEmail(normalizedEmail)
             if (existing != null) {
                 triggerToast("Email already registered locally!")
                 onResult(false)
@@ -282,7 +293,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
             // Check Firebase RTDB
             val dbRef = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users")
-            val emailKey = user.email.replace(".", "_")
+            val emailKey = normalizedEmail.replace(".", "_")
             
             dbRef.child(emailKey).get().addOnSuccessListener { snapshot ->
                 if (snapshot.exists()) {
@@ -291,7 +302,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     viewModelScope.launch(Dispatchers.IO) {
                         // Insert new user locally
-                        val userId = repository.insertUser(user)
+                        val userId = repository.insertUser(normalizedUser)
                         if (userId > 0) {
                             val registeredUser = repository.getUserById(userId.toInt())
                             if (registeredUser != null) {
@@ -369,7 +380,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loginUser(email: String, password: String, rememberMe: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
-            val emailKey = email.replace(".", "_")
+            val processedEmail = email.trim().lowercase()
+            val emailKey = processedEmail.replace(".", "_")
             val dbRef = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(emailKey)
             
             dbRef.get().addOnSuccessListener { snapshot ->
@@ -404,7 +416,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         val userObj = User(
                             id = id,
                             username = username,
-                            email = email,
+                            email = processedEmail,
                             password = password,
                             mainWallet = mainWallet,
                             bonusWallet = bonusWallet,
@@ -542,6 +554,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             .setValue(user)
     }
 
+    fun updateLocalAndFirebaseUser(user: User) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateUser(user)
+            syncUserToFirebase(user)
+        }
+    }
+
     fun logout() {
         stopListeningToFirebaseUser()
         sharedPrefs.edit().remove("logged_in_user_id").apply()
@@ -557,7 +576,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             repository.getUserByIdFlow(userId).collect { user ->
                 _currentUser.value = user
                 if (user != null) {
-                    syncUserToFirebase(user)
                     startListeningToFirebaseUser(user.email)
                 }
             }
@@ -592,19 +610,39 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 _userDailyTasks.value = it
             }
         }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val claim = repository.getClaimForUser(userId)
+            _userDailyClaim.value = claim
+        }
     }
 
     private suspend fun initializeDailyTasks(userId: Int) {
-        val tasks = listOf(
-            DailyTask(userId = userId, taskType = "PLAY_2", title = "Play Game 2 Minutes", targetCount = 2, currentCount = 0, rewardCoins = 5),
-            DailyTask(userId = userId, taskType = "PLAY_15", title = "Play Game 15 Minutes", targetCount = 15, currentCount = 0, rewardCoins = 10),
-            DailyTask(userId = userId, taskType = "PLAY_20", title = "Play Game 20 Minutes", targetCount = 20, currentCount = 0, rewardCoins = 15),
-            DailyTask(userId = userId, taskType = "JOIN_TOURNAMENT", title = "Join 1 Tournament", targetCount = 1, currentCount = 0, rewardCoins = 8),
-            DailyTask(userId = userId, taskType = "WIN_TOURNAMENT", title = "Win 1 Tournament Match", targetCount = 1, currentCount = 0, rewardCoins = 25),
-            DailyTask(userId = userId, taskType = "WATCH_AD_5", title = "Watch 5 Video Ads", targetCount = 5, currentCount = 0, rewardCoins = 15),
-            DailyTask(userId = userId, taskType = "REFER_FRIEND", title = "Refer 1 Friend", targetCount = 1, currentCount = 0, rewardCoins = 15),
-            DailyTask(userId = userId, taskType = "DEPOSIT_1", title = "Complete First Deposit", targetCount = 1, currentCount = 0, rewardCoins = 200)
-        )
+        val templates = _taskTemplates.value
+        val tasks = if (templates.isNotEmpty()) {
+            templates.map { t ->
+                DailyTask(
+                    userId = userId,
+                    taskType = t["id"] as String,
+                    title = t["title"] as String,
+                    targetCount = t["targetCount"] as Int,
+                    currentCount = 0,
+                    rewardCoins = t["rewardCoins"] as Int,
+                    isCompleted = false,
+                    isClaimed = false
+                )
+            }
+        } else {
+            listOf(
+                DailyTask(userId = userId, taskType = "PLAY_2", title = "Play Game 2 Minutes", targetCount = 2, currentCount = 0, rewardCoins = 5),
+                DailyTask(userId = userId, taskType = "PLAY_15", title = "Play Game 15 Minutes", targetCount = 15, currentCount = 0, rewardCoins = 10),
+                DailyTask(userId = userId, taskType = "PLAY_20", title = "Play Game 20 Minutes", targetCount = 20, currentCount = 0, rewardCoins = 15),
+                DailyTask(userId = userId, taskType = "JOIN_TOURNAMENT", title = "Join 1 Tournament", targetCount = 1, currentCount = 0, rewardCoins = 8),
+                DailyTask(userId = userId, taskType = "WIN_TOURNAMENT", title = "Win 1 Tournament Match", targetCount = 1, currentCount = 0, rewardCoins = 25),
+                DailyTask(userId = userId, taskType = "WATCH_AD_5", title = "Watch 5 Video Ads", targetCount = 5, currentCount = 0, rewardCoins = 15),
+                DailyTask(userId = userId, taskType = "REFER_FRIEND", title = "Refer 1 Friend", targetCount = 1, currentCount = 0, rewardCoins = 15),
+                DailyTask(userId = userId, taskType = "DEPOSIT_1", title = "Complete First Deposit", targetCount = 1, currentCount = 0, rewardCoins = 200)
+            )
+        }
         repository.insertDailyTasks(tasks)
     }
 
@@ -788,6 +826,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 time = getCurrentTimeString(),
                 type = "Rewards Available"
             ))
+
+            // Update local state flow
+            val savedClaim = repository.getClaimForUser(user.id)
+            _userDailyClaim.value = savedClaim
 
             triggerToast("Claimed Day $dayNum reward: $rewardCoins Coins added!")
         }
@@ -1645,7 +1687,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(cal.time)
     }
 
-    private fun isSameDay(t1: Long, t2: Long): Boolean {
+    fun isSameDay(t1: Long, t2: Long): Boolean {
         val s1 = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(t1))
         val s2 = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(t2))
         return s1 == s2
@@ -1830,6 +1872,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val roomId = map["roomId"] as? String ?: ""
         val roomPassword = map["roomPassword"] as? String ?: ""
         val imageUrl = map["imageUrl"] as? String ?: ""
+        val adsRequired = (map["adsRequired"] as? Number)?.toInt() ?: 0
         
         val localId = Math.abs(fbId.hashCode())
         
@@ -1848,7 +1891,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             description = description,
             roomId = roomId,
             roomPassword = roomPassword,
-            imageUrl = imageUrl
+            imageUrl = imageUrl,
+            adsRequired = adsRequired
         )
     }
 
@@ -1864,5 +1908,128 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             imageUrl = imageUrl,
             actionUrl = link
         )
+    }
+
+    private fun listenToTaskTemplates() {
+        val ref = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("daily_task_templates")
+        ref.addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                val list = mutableListOf<Map<String, Any>>()
+                if (!snapshot.exists()) {
+                    val defaults = listOf(
+                        mapOf("id" to "PLAY_2", "title" to "Play Game 2 Minutes", "targetCount" to 2, "rewardCoins" to 5),
+                        mapOf("id" to "PLAY_15", "title" to "Play Game 15 Minutes", "targetCount" to 15, "rewardCoins" to 10),
+                        mapOf("id" to "PLAY_20", "title" to "Play Game 20 Minutes", "targetCount" to 20, "rewardCoins" to 15),
+                        mapOf("id" to "JOIN_TOURNAMENT", "title" to "Join 1 Tournament", "targetCount" to 1, "rewardCoins" to 8),
+                        mapOf("id" to "WIN_TOURNAMENT", "title" to "Win 1 Tournament Match", "targetCount" to 1, "rewardCoins" to 25),
+                        mapOf("id" to "WATCH_AD_5", "title" to "Watch 5 Video Ads", "targetCount" to 5, "rewardCoins" to 15),
+                        mapOf("id" to "REFER_FRIEND", "title" to "Refer 1 Friend", "targetCount" to 1, "rewardCoins" to 15),
+                        mapOf("id" to "DEPOSIT_1", "title" to "Complete First Deposit", "targetCount" to 1, "rewardCoins" to 200)
+                    )
+                    for (d in defaults) {
+                        ref.child(d["id"] as String).setValue(d)
+                    }
+                    return
+                }
+                for (child in snapshot.children) {
+                    val id = child.child("id").getValue(String::class.java) ?: child.key ?: ""
+                    val title = child.child("title").getValue(String::class.java) ?: ""
+                    val targetCount = child.child("targetCount").getValue(Int::class.java) ?: 0
+                    val rewardCoins = child.child("rewardCoins").getValue(Int::class.java) ?: 0
+                    if (id.isNotEmpty()) {
+                        list.add(mapOf("id" to id, "title" to title, "targetCount" to targetCount, "rewardCoins" to rewardCoins))
+                    }
+                }
+                _taskTemplates.value = list
+                
+                viewModelScope.launch {
+                    syncTemplatesToActiveUserTasks(list)
+                }
+            }
+            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+        })
+    }
+
+    private suspend fun syncTemplatesToActiveUserTasks(templates: List<Map<String, Any>>) {
+        val user = _currentUser.value ?: return
+        val currentLocalTasks = repository.getTasksForUserList(user.id)
+        val templateIds = templates.map { it["id"] as String }.toSet()
+
+        for (localTask in currentLocalTasks) {
+            if (!templateIds.contains(localTask.taskType)) {
+                viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    repository.deleteDailyTask(localTask)
+                }
+            } else {
+                val matchingTemplate = templates.firstOrNull { (it["id"] as String) == localTask.taskType }
+                if (matchingTemplate != null) {
+                    val newTitle = matchingTemplate["title"] as String
+                    val newTarget = matchingTemplate["targetCount"] as Int
+                    val newReward = matchingTemplate["rewardCoins"] as Int
+                    if (localTask.title != newTitle || localTask.targetCount != newTarget || localTask.rewardCoins != newReward) {
+                        repository.updateDailyTask(localTask.copy(
+                            title = newTitle,
+                            targetCount = newTarget,
+                            rewardCoins = newReward,
+                            isCompleted = localTask.currentCount >= newTarget
+                        ))
+                    }
+                }
+            }
+        }
+
+        val localTaskTypes = currentLocalTasks.map { it.taskType }.toSet()
+        val newTasksToInsert = mutableListOf<DailyTask>()
+        for (template in templates) {
+            val tid = template["id"] as String
+            if (!localTaskTypes.contains(tid)) {
+                newTasksToInsert.add(DailyTask(
+                    userId = user.id,
+                    taskType = tid,
+                    title = template["title"] as String,
+                    targetCount = template["targetCount"] as Int,
+                    currentCount = 0,
+                    rewardCoins = template["rewardCoins"] as Int,
+                    isCompleted = false,
+                    isClaimed = false
+                ))
+            }
+        }
+        if (newTasksToInsert.isNotEmpty()) {
+            repository.insertDailyTasks(newTasksToInsert)
+        }
+    }
+
+    fun adminCreateTaskTemplate(typeId: String, title: String, targetCount: Int, rewardCoins: Int) {
+        val rootRef = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("daily_task_templates")
+        val data = mapOf(
+            "id" to typeId,
+            "title" to title,
+            "targetCount" to targetCount,
+            "rewardCoins" to rewardCoins
+        )
+        rootRef.child(typeId).setValue(data)
+            .addOnSuccessListener { triggerToast("Task Template Added globally!") }
+            .addOnFailureListener { triggerToast("Failed to add task template.") }
+    }
+
+    fun adminUpdateTaskTemplate(typeId: String, title: String, targetCount: Int, rewardCoins: Int) {
+        val rootRef = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("daily_task_templates")
+        val data = mapOf(
+            "id" to typeId,
+            "title" to title,
+            "targetCount" to targetCount,
+            "rewardCoins" to rewardCoins
+        )
+        rootRef.child(typeId).setValue(data)
+            .addOnSuccessListener { triggerToast("Task Template Updated globally!") }
+            .addOnFailureListener { triggerToast("Failed to update task template.") }
+    }
+
+    fun adminDeleteTaskTemplate(typeId: String) {
+        val rootRef = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("daily_task_templates")
+        rootRef.child(typeId).removeValue()
+            .addOnSuccessListener { triggerToast("Task Template Deleted globally!") }
+            .addOnFailureListener { triggerToast("Failed to delete task template.") }
     }
 }
