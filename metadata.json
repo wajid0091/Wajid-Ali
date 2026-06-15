@@ -1,6 +1,6 @@
 {
-  "name": "T2 Coin",
-  "description": "T2 Coin (T2C) Crypto Mining App with 24-hour mining cycles and rewards.",
+  "name": "Anu Battle",
+  "description": "Anu Battle esports tournament app.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

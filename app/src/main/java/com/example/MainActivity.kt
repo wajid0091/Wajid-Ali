@@ -46,7 +46,7 @@ import com.unity3d.ads.UnityAdsShowOptions
 
 class MainActivity : ComponentActivity(), IUnityAdsInitializationListener {
 
-    private var unityGameId = "2840915"
+    private var unityGameId = "5763487"
     private var isAdReady = false
     private var testMode = false
     
@@ -62,7 +62,7 @@ class MainActivity : ComponentActivity(), IUnityAdsInitializationListener {
         // Fetch values
         lifecycleScope.launch {
             viewModel.allSettings.collect { settingsList ->
-                val gameId = settingsList.find { it.key == "unity_game_id" }?.value ?: "2840915"
+                val gameId = settingsList.find { it.key == "unity_game_id" }?.value ?: "5763487"
                 if (!UnityAds.isInitialized && gameId.isNotEmpty()) {
                     unityGameId = gameId
                     UnityAds.initialize(applicationContext, unityGameId, testMode, this@MainActivity)
@@ -92,11 +92,6 @@ class MainActivity : ComponentActivity(), IUnityAdsInitializationListener {
                             is Screen.AdminLogin -> AdminPanelScreen(viewModel)
                             else -> LoginScreen(viewModel)
                         }
-
-                        // --- FULL-SCREEN AD PLAYER OVERLAY ---
-                        if (isShowingAd) {
-                            SimulatedAdPlayerOverlay(viewModel)
-                        }
                     }
 
                     // --- Toast Trigger Hook ---
@@ -121,15 +116,48 @@ class MainActivity : ComponentActivity(), IUnityAdsInitializationListener {
     }
     override fun onInitializationComplete() {
         isAdReady = true
+        preloadAds()
     }
 
     override fun onInitializationFailed(error: UnityAds.UnityAdsInitializationError?, message: String?) {
-        Toast.makeText(this, "Unity Ads Failed: $message", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Unity Ads Init Failed: $message", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun preloadAds() {
+        val loadListener = object : com.unity3d.ads.IUnityAdsLoadListener {
+            override fun onUnityAdsAdLoaded(placementId: String) {}
+            override fun onUnityAdsFailedToLoad(placementId: String, error: UnityAds.UnityAdsLoadError, message: String) {}
+        }
+        UnityAds.load("Rewarded_Android", loadListener)
+        UnityAds.load("Interstitial_Android", loadListener)
+    }
+
+    private var lastInterstitialTime = 0L
+
+    fun showInterstitialAd(adUnitId: String = "Interstitial_Android") {
+        if (!isAdReady || !UnityAds.isInitialized) return
+        val currentTime = System.currentTimeMillis()
+        // Cooldown 2 minutes
+        if (currentTime - lastInterstitialTime < 120_000) return
+
+        val showListener = object : IUnityAdsShowListener {
+            override fun onUnityAdsShowFailure(placementId: String, error: UnityAds.UnityAdsShowError, message: String) {
+                preloadAds() // Retry load
+            }
+            override fun onUnityAdsShowStart(placementId: String) {}
+            override fun onUnityAdsShowClick(placementId: String) {}
+            override fun onUnityAdsShowComplete(placementId: String, state: UnityAds.UnityAdsShowCompletionState) {
+                lastInterstitialTime = System.currentTimeMillis()
+                preloadAds()
+            }
+        }
+        UnityAds.show(this, adUnitId, UnityAdsShowOptions(), showListener)
     }
 
     fun showRewardedAd(adUnitId: String, onReward: () -> Unit) {
         if (!isAdReady || !UnityAds.isInitialized) {
             Toast.makeText(this, "Ad is not ready yet, loading...", Toast.LENGTH_SHORT).show()
+            preloadAds()
             return
         }
         pendingRewardCallback = onReward
@@ -137,6 +165,7 @@ class MainActivity : ComponentActivity(), IUnityAdsInitializationListener {
         val showListener = object : IUnityAdsShowListener {
             override fun onUnityAdsShowFailure(placementId: String, error: UnityAds.UnityAdsShowError, message: String) {
                 Toast.makeText(this@MainActivity, "Failed to show ad: $message", Toast.LENGTH_SHORT).show()
+                preloadAds()
             }
 
             override fun onUnityAdsShowStart(placementId: String) {}
@@ -149,132 +178,9 @@ class MainActivity : ComponentActivity(), IUnityAdsInitializationListener {
                     Toast.makeText(this@MainActivity, "Ad skipped, no reward.", Toast.LENGTH_SHORT).show()
                 }
                 pendingRewardCallback = null
+                preloadAds()
             }
         }
         UnityAds.show(this, adUnitId, UnityAdsShowOptions(), showListener)
-    }
-}
-
-@Composable
-fun SimulatedAdPlayerOverlay(viewModel: AppViewModel) {
-    val progressSeconds by viewModel.adProgressSeconds.collectAsState()
-    val settingsList by viewModel.allSettings.collectAsState()
-    val gameId = settingsList.find { it.key == "unity_game_id" }?.value ?: "2840915"
-    val rewardedId = settingsList.find { it.key == "unity_rewarded_id" }?.value ?: "Rewarded_Android"
-
-    androidx.compose.ui.window.Dialog(
-        onDismissRequest = { /* Lock dismissal until ad completion */ },
-        properties = androidx.compose.ui.window.DialogProperties(
-            dismissOnBackPress = false,
-            dismissOnClickOutside = false,
-            usePlatformDefaultWidth = false
-        )
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.SpaceBetween,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 28.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        androidx.compose.material3.Text(
-                            text = "Sponsor Video Ad",
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Black
-                        )
-                        androidx.compose.material3.Text(
-                            text = "GameID: $gameId • Target: $rewardedId",
-                            color = Color.Gray,
-                            fontSize = 10.sp
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(Color.White.copy(alpha = 0.15f))
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        androidx.compose.material3.Text(
-                            text = if (progressSeconds > 0) "Seconds left: ${progressSeconds}s" else "Granting Reward...",
-                            color = Color(0xFFF59E0B),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(vertical = 12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.9f)
-                            .height(200.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                androidx.compose.ui.graphics.Brush.linearGradient(
-                                    listOf(
-                                        Color(0xFFD97706),
-                                        Color(0xFF6B21A8)
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            androidx.compose.material3.Text(
-                                "ANU BATTLE ARENA",
-                                color = Color.White,
-                                fontSize = 21.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            androidx.compose.material3.Text(
-                                "Streaming High Quality Video ad...",
-                                color = Color.White.copy(alpha = 0.75f),
-                                fontSize = 11.sp
-                            )
-                            Spacer(modifier = Modifier.height(18.dp))
-                            androidx.compose.material3.CircularProgressIndicator(color = Color(0xFFF59E0B))
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    androidx.compose.material3.Text(
-                        "Anu Battle rewards are brought to you by brand sponsors. Please do not close until the countdown finishes.",
-                        color = Color.Gray,
-                        fontSize = 11.sp,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 20.dp)
-                    )
-                }
-
-                androidx.compose.material3.Text(
-                    text = "Unity Ads Engine Simulation Mode",
-                    color = Color.DarkGray,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-            }
-        }
     }
 }

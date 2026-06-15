@@ -18,17 +18,38 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.example.data.models.Tournament
+import androidx.compose.ui.viewinterop.AndroidView
+import com.example.MainActivity
+import com.unity3d.services.banners.BannerView
+import com.unity3d.services.banners.UnityBannerSize
 import com.example.ui.AppViewModel
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
+
+@Composable
+fun UnityBannerAd(adUnitId: String, modifier: Modifier = Modifier) {
+    if (LocalContext.current is MainActivity) {
+        val activity = LocalContext.current as MainActivity
+        AndroidView(
+            modifier = modifier.fillMaxWidth().height(50.dp),
+            factory = { context ->
+                BannerView(activity, adUnitId, UnityBannerSize(320, 50)).apply {
+                    load()
+                }
+            }
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TournamentDetailsScreen(viewModel: AppViewModel, tournamentId: Int) {
     val tournamentsList by viewModel.tournaments.collectAsState()
     val joinedMatches by viewModel.userJoinedTournaments.collectAsState()
+    val allSettings by viewModel.allSettings.collectAsState()
     val t = tournamentsList.find { it.id == tournamentId }
 
     // Countdown active ticker
@@ -123,24 +144,60 @@ fun TournamentDetailsScreen(viewModel: AppViewModel, tournamentId: Int) {
                             Text("REGISTERED", fontWeight = FontWeight.Black, fontSize = 14.sp)
                         }
                     } else {
-                        Button(
-                            onClick = { viewModel.joinTournament(t.id) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (t.status == "Open") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                                contentColor = if (t.status == "Open") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondary
-                            ),
-                            enabled = t.status == "Open",
-                            modifier = Modifier
-                                .width(180.dp)
-                                .height(48.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(
-                                text = if (t.status == "Open") "SECURE SLOT" else t.status.uppercase(),
-                                fontWeight = FontWeight.Black,
-                                fontSize = 14.sp,
-                                letterSpacing = 0.5.sp
-                            )
+                        val isPremium = t.entryFee > 0.0
+                        val requiredAdsCount = 3
+                        val adsWatchedKey = "ads_watched_${t.id}"
+                        val adsWatchedStr = allSettings.find { it.key == adsWatchedKey }?.value ?: "0"
+                        val adsWatched = adsWatchedStr.toIntOrNull() ?: 0
+                        val context = LocalContext.current
+
+                        if (isPremium && adsWatched < requiredAdsCount && t.status == "Open") {
+                            Button(
+                                onClick = {
+                                    val activity = context as? com.example.MainActivity
+                                    if (activity != null) {
+                                        val rewardedId = viewModel.getSettingValue("unity_rewarded_id", "Rewarded_Android")
+                                        activity.showRewardedAd(rewardedId) {
+                                            viewModel.updateSetting(adsWatchedKey, (adsWatched + 1).toString())
+                                        }
+                                    } else {
+                                        viewModel.triggerToast("Activity context is missing.")
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                                modifier = Modifier
+                                    .fillMaxWidth(0.6f)
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = "Watch Ad", modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "Ads Watched: $adsWatched/$requiredAdsCount",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        } else {
+                            Button(
+                                onClick = { viewModel.joinTournament(t.id) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (t.status == "Open") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                                    contentColor = if (t.status == "Open") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondary
+                                ),
+                                enabled = t.status == "Open",
+                                modifier = Modifier
+                                    .width(180.dp)
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = if (t.status == "Open") "SECURE SLOT" else t.status.uppercase(),
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 14.sp,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
                         }
                     }
                 }
@@ -204,13 +261,15 @@ fun TournamentDetailsScreen(viewModel: AppViewModel, tournamentId: Int) {
                     .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                DetailsMetaItem(
-                    icon = Icons.Default.Star,
-                    label = "PRIZE POOL",
-                    value = "Rs.${t.prizePool}",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f)
-                )
+                if (t.prizePool > 0.0) {
+                    DetailsMetaItem(
+                        icon = Icons.Default.Star,
+                        label = "PRIZE POOL",
+                        value = "Rs.${t.prizePool}",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
 
                 DetailsMetaItem(
                     icon = Icons.Default.List,
@@ -405,21 +464,51 @@ fun RoomCredentialsBox(t: Tournament, timeTickerMs: Long) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("ROOM ID", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                        Text(
-                            text = t.roomId.ifEmpty { "WAITING_ADMIN" },
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Black,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = t.roomId.ifEmpty { "WAITING_ADMIN" },
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+                            if (t.roomId.isNotEmpty()) {
+                                TextButton(
+                                    onClick = { 
+                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(t.roomId))
+                                    },
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                                    modifier = Modifier.height(24.dp)
+                                ) {
+                                    Text("COPY", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("ROOM PASSWORD", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                        Text(
-                            text = t.roomPassword.ifEmpty { "WAITING_ADMIN" },
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Black,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Text("ROOM PWD", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = t.roomPassword.ifEmpty { "WAITING_ADMIN" },
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+                            if (t.roomPassword.isNotEmpty()) {
+                                TextButton(
+                                    onClick = { 
+                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(t.roomPassword))
+                                    },
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                                    modifier = Modifier.height(24.dp)
+                                ) {
+                                    Text("COPY", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(4.dp))

@@ -323,6 +323,7 @@ fun AdminUsersSubPanel(viewModel: AppViewModel) {
 fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
     val tourneysList by viewModel.tournaments.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    var editingTournament by remember { mutableStateOf<Tournament?>(null) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(
@@ -332,7 +333,7 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
         ) {
             Text("Tournament Schedules", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color.White)
             Button(
-                onClick = { showCreateDialog = true },
+                onClick = { editingTournament = null; showCreateDialog = true },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
                 shape = RoundedCornerShape(8.dp)
             ) {
@@ -365,6 +366,12 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
                                 }
 
                                 Row {
+                                    IconButton(onClick = { 
+                                        editingTournament = t
+                                        showCreateDialog = true 
+                                    }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.Blue)
+                                    }
                                     IconButton(onClick = { viewModel.adminDeleteTournament(t) }) {
                                         Icon(Icons.Default.Delete, contentDescription = "Delete Tournament", tint = Color.Red)
                                     }
@@ -383,18 +390,18 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
     }
 
     if (showCreateDialog) {
-        var name by remember { mutableStateOf("") }
-        var type by remember { mutableStateOf("Clash Squad") }
-        var entryFee by remember { mutableStateOf("") }
-        var prizePool by remember { mutableStateOf("") }
-        var slots by remember { mutableStateOf("20") }
-        var date by remember { mutableStateOf(viewModel.getCurrentDateString()) }
-        var time by remember { mutableStateOf("18:00") }
-        var mapType by remember { mutableStateOf("Bermuda") }
-        var roomId by remember { mutableStateOf("") }
-        var roomPwd by remember { mutableStateOf("") }
-        var visMode by remember { mutableStateOf("Scheduled") } // Permanent vs Scheduled
-        var imageUrl by remember { mutableStateOf("") }
+        var name by remember { mutableStateOf(editingTournament?.name ?: "") }
+        var type by remember { mutableStateOf(editingTournament?.type ?: "Clash Squad") }
+        var entryFee by remember { mutableStateOf(if(editingTournament != null && editingTournament?.entryFee!! > 0) editingTournament?.entryFee.toString() else "") }
+        var prizePool by remember { mutableStateOf(if(editingTournament != null && editingTournament?.prizePool!! > 0) editingTournament?.prizePool.toString() else "") }
+        var slots by remember { mutableStateOf(editingTournament?.totalSlots?.toString() ?: "20") }
+        var date by remember { mutableStateOf(editingTournament?.date ?: viewModel.getCurrentDateString()) }
+        var time by remember { mutableStateOf(editingTournament?.time ?: "18:00") }
+        var mapType by remember { mutableStateOf(editingTournament?.mapType ?: "Bermuda") }
+        var roomId by remember { mutableStateOf(editingTournament?.roomId ?: "") }
+        var roomPwd by remember { mutableStateOf(editingTournament?.roomPassword ?: "") }
+        var visMode by remember { mutableStateOf(editingTournament?.visibilityMode ?: "Scheduled") } // Permanent vs Scheduled
+        var imageUrl by remember { mutableStateOf(editingTournament?.imageUrl ?: "") }
         var isUploading by remember { mutableStateOf(false) }
         val context = LocalContext.current
 
@@ -411,8 +418,11 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
         }
 
         AlertDialog(
-            onDismissRequest = { showCreateDialog = false },
-            title = { Text("Assemble New Match Lobby", fontWeight = FontWeight.Bold) },
+            onDismissRequest = { 
+                showCreateDialog = false
+                editingTournament = null 
+            },
+            title = { Text(if(editingTournament != null) "Edit Match Lobby" else "Assemble New Match Lobby", fontWeight = FontWeight.Bold) },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -421,6 +431,7 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
                     OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Lobby Name") })
                     
                     Text("Select or upload tournament banner image:", fontSize = 11.sp, color = Color.Gray)
+                    Text("Recommended Size: 600x300 for Banners.", fontSize = 10.sp, color = Color(0xFFF59E0B))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -463,8 +474,22 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
                         )
                     }
 
+                    Text("Match Type Selection:", fontSize = 12.sp, color = Color.White)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { type = "Clash Squad" },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (type == "Clash Squad") Color(0xFFF59E0B) else Color.DarkGray),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Clash Squad", color = if (type == "Clash Squad") Color.Black else Color.White, fontSize = 10.sp) }
+                        Button(
+                            onClick = { type = "Battle Royale" },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (type == "Battle Royale") Color(0xFFF59E0B) else Color.DarkGray),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Battle Royale", color = if (type == "Battle Royale") Color.Black else Color.White, fontSize = 10.sp) }
+                    }
+
                     OutlinedTextField(value = entryFee, onValueChange = { entryFee = it }, label = { Text("Entry Fee (Rs.)") })
-                    OutlinedTextField(value = prizePool, onValueChange = { prizePool = it }, label = { Text("Prize Pool (Rs.)") })
+                    OutlinedTextField(value = prizePool, onValueChange = { prizePool = it }, label = { Text("Prize Pool (Rs.) (Leave empty if none)") })
                     OutlinedTextField(value = slots, onValueChange = { slots = it }, label = { Text("Total Slots size") })
                     OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Match Date (yyyy-MM-dd)") })
                     OutlinedTextField(value = time, onValueChange = { time = it }, label = { Text("Match Start Time (HH:mm)") })
@@ -478,32 +503,40 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
                 Button(
                     onClick = {
                         val newT = Tournament(
+                            id = editingTournament?.id ?: 0,
                             name = name.ifEmpty { "BGMI Elite Cup" },
                             type = type,
                             entryFee = entryFee.toDoubleOrNull() ?: 10.0,
-                            prizePool = prizePool.toDoubleOrNull() ?: 100.0,
+                            prizePool = prizePool.toDoubleOrNull() ?: 0.0,
                             totalSlots = slots.toIntOrNull() ?: 20,
-                            filledSlots = 0,
+                            filledSlots = editingTournament?.filledSlots ?: 0,
                             date = date,
                             time = time,
-                            status = "Open",
+                            status = editingTournament?.status ?: "Open",
                             mapType = mapType,
                             roomId = roomId,
                             roomPassword = roomPwd,
                             visibilityMode = visMode,
                             imageUrl = imageUrl,
-                            description = "Admin assembled tournament for Anu Battle league."
+                            description = editingTournament?.description ?: "Admin assembled tournament for Anu Battle league."
                         )
-                        viewModel.adminCreateTournament(newT)
+                        if (editingTournament != null) {
+                            viewModel.adminUpdateTournament(newT)
+                        } else {
+                            viewModel.adminCreateTournament(newT)
+                        }
                         showCreateDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
                 ) {
-                    Text("SAVE TO LIVE", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text(if(editingTournament != null) "UPDATE LOBBY" else "SAVE TO LIVE", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCreateDialog = false }) { Text("CANCEL") }
+                TextButton(onClick = { 
+                    showCreateDialog = false
+                    editingTournament = null 
+                }) { Text("CANCEL", color = Color.White) }
             }
         )
     }
@@ -516,9 +549,15 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
 @Composable
 fun AdminDepositsSubPanel(viewModel: AppViewModel) {
     val depositsList by viewModel.allDeposits.collectAsState()
+    var showPaymentConfig by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Main Balance Cash Deposits Sheets", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color.White)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Main Balance Cash Deposits Sheets", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color.White)
+            IconButton(onClick = { showPaymentConfig = true }) {
+                Icon(Icons.Default.Settings, contentDescription = "Payment Settings", tint = Color.White)
+            }
+        }
         Spacer(modifier = Modifier.height(12.dp))
 
         if (depositsList.isEmpty()) {
@@ -587,6 +626,46 @@ fun AdminDepositsSubPanel(viewModel: AppViewModel) {
                 }
             }
         }
+    }
+
+    if (showPaymentConfig) {
+        var epName by remember { mutableStateOf(viewModel.getSettingValue("payment_easypaisa_name", "Ahsan")) }
+        var epNum by remember { mutableStateOf(viewModel.getSettingValue("payment_easypaisa_number", "03001234567")) }
+        var jcName by remember { mutableStateOf(viewModel.getSettingValue("payment_jazzcash_name", "Anu Battle")) }
+        var jcNum by remember { mutableStateOf(viewModel.getSettingValue("payment_jazzcash_number", "03001234568")) }
+
+        AlertDialog(
+            onDismissRequest = { showPaymentConfig = false },
+            title = { Text("Payment Methods Setup", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text("EasyPaisa Settings", color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)
+                    OutlinedTextField(value = epName, onValueChange = { epName = it }, label = { Text("Account Name") })
+                    OutlinedTextField(value = epNum, onValueChange = { epNum = it }, label = { Text("Account Number") })
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("JazzCash Settings", color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)
+                    OutlinedTextField(value = jcName, onValueChange = { jcName = it }, label = { Text("Account Name") })
+                    OutlinedTextField(value = jcNum, onValueChange = { jcNum = it }, label = { Text("Account Number") })
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.updateSetting("payment_easypaisa_name", epName)
+                        viewModel.updateSetting("payment_easypaisa_number", epNum)
+                        viewModel.updateSetting("payment_jazzcash_name", jcName)
+                        viewModel.updateSetting("payment_jazzcash_number", jcNum)
+                        viewModel.triggerToast("Payment Methods Updated!")
+                        showPaymentConfig = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
+                ) { Text("SAVE", color = Color.Black) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPaymentConfig = false }) { Text("CANCEL", color = Color.White) }
+            }
+        )
     }
 }
 
@@ -771,6 +850,8 @@ fun AdminBannersSubPanel(viewModel: AppViewModel) {
 
                     Spacer(modifier = Modifier.height(4.dp))
 
+                    Text("Recommended Size: 1024x512 px (Horizontal 2:1) for Sliding Promotion images.", fontSize = 11.sp, color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)
+
                     Button(
                         onClick = { galleryLauncher.launch("image/*") },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF374151)),
@@ -917,6 +998,10 @@ fun AdminUnityAdsSubPanel(viewModel: AppViewModel) {
     val currentRewardedId = settingsList.find { it.key == "unity_rewarded_id" }?.value ?: ""
     val currentBannerId = settingsList.find { it.key == "unity_banner_id" }?.value ?: ""
     val currentCoinsPerPkr = settingsList.find { it.key == "coins_per_pkr" }?.value ?: "10"
+    val currentEpName = settingsList.find { it.key == "payment_easypaisa_name" }?.value ?: "Ahsan"
+    val currentEpNum = settingsList.find { it.key == "payment_easypaisa_number" }?.value ?: "03001234567"
+    val currentJcName = settingsList.find { it.key == "payment_jazzcash_name" }?.value ?: "Anu Battle"
+    val currentJcNum = settingsList.find { it.key == "payment_jazzcash_number" }?.value ?: "03001234568"
 
     // Form fields
     var gameId by remember(currentGameId) { mutableStateOf(currentGameId) }
@@ -926,6 +1011,10 @@ fun AdminUnityAdsSubPanel(viewModel: AppViewModel) {
     var rewardedId by remember(currentRewardedId) { mutableStateOf(currentRewardedId) }
     var bannerId by remember(currentBannerId) { mutableStateOf(currentBannerId) }
     var coinsPerPkr by remember(currentCoinsPerPkr) { mutableStateOf(currentCoinsPerPkr) }
+    var epName by remember(currentEpName) { mutableStateOf(currentEpName) }
+    var epNum by remember(currentEpNum) { mutableStateOf(currentEpNum) }
+    var jcName by remember(currentJcName) { mutableStateOf(currentJcName) }
+    var jcNum by remember(currentJcNum) { mutableStateOf(currentJcNum) }
 
     var isSaving by remember { mutableStateOf(false) }
 
@@ -1047,13 +1136,66 @@ fun AdminUnityAdsSubPanel(viewModel: AppViewModel) {
             modifier = Modifier.fillMaxWidth()
         )
 
+        HorizontalDivider(color = Color.Gray.copy(alpha = 0.3f))
+
+        Text("Payment Account Details Setup", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text("Customize EasyPaisa and JazzCash numbers and titles displayed on user deposit screens.", fontSize = 11.sp, color = Color.Gray)
+
+        OutlinedTextField(
+            value = epName,
+            onValueChange = { epName = it },
+            label = { Text("EasyPaisa Account Title") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFF59E0B)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        OutlinedTextField(
+            value = epNum,
+            onValueChange = { epNum = it },
+            label = { Text("EasyPaisa Account Phone Number") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFF59E0B)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        OutlinedTextField(
+            value = jcName,
+            onValueChange = { jcName = it },
+            label = { Text("JazzCash Account Title") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFF59E0B)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        OutlinedTextField(
+            value = jcNum,
+            onValueChange = { jcNum = it },
+            label = { Text("JazzCash Account Phone Number") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFF59E0B)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
         Spacer(modifier = Modifier.height(8.dp))
 
         Button(
             onClick = {
                 isSaving = true
                 var count = 0
-                val total = 7
+                val total = 11
                 
                 fun checkComplete() {
                     count++
@@ -1070,6 +1212,10 @@ fun AdminUnityAdsSubPanel(viewModel: AppViewModel) {
                 viewModel.updateSetting("unity_rewarded_id", rewardedId) { checkComplete() }
                 viewModel.updateSetting("unity_banner_id", bannerId) { checkComplete() }
                 viewModel.updateSetting("coins_per_pkr", coinsPerPkr) { checkComplete() }
+                viewModel.updateSetting("payment_easypaisa_name", epName) { checkComplete() }
+                viewModel.updateSetting("payment_easypaisa_number", epNum) { checkComplete() }
+                viewModel.updateSetting("payment_jazzcash_name", jcName) { checkComplete() }
+                viewModel.updateSetting("payment_jazzcash_number", jcNum) { checkComplete() }
             },
             enabled = !isSaving,
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
@@ -1080,7 +1226,7 @@ fun AdminUnityAdsSubPanel(viewModel: AppViewModel) {
             if (isSaving) {
                 CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
             } else {
-                Text("SAVE & UPDATE ADS SYSTEM", fontWeight = FontWeight.Black, color = Color.Black)
+                Text("SAVE & UPDATE CONFIGS", fontWeight = FontWeight.Black, color = Color.Black)
             }
         }
     }

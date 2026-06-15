@@ -144,6 +144,47 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         // Sync and pull live tournaments, banners, and settings from Firebase RTDB
         syncFromFirebase()
+
+        // Periodic check for room unlocks for notifications
+        viewModelScope.launch(Dispatchers.IO) {
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+            while (true) {
+                kotlinx.coroutines.delay(60000) // Check every 60s
+                val cUser = _currentUser.value
+                if(cUser != null) {
+                    val joinedTourneys = repository.getJoinedTournamentsForUserList(cUser.id)
+                    val nowMs = System.currentTimeMillis()
+                    for(jt in joinedTourneys) {
+                        val t = repository.getTournamentById(jt.tournamentId)
+                        if(t != null && t.visibilityMode == "Scheduled" && !t.isRoomVisibleManuallyOverride) {
+                            try {
+                                val matchDateTime = sdf.parse("${t.date} ${t.time}")
+                                if (matchDateTime != null) {
+                                    val matchTimeMs = matchDateTime.time
+                                    val unlockTimeMs = matchTimeMs - (10 * 60 * 1000)
+                                    if(nowMs >= unlockTimeMs && nowMs < matchTimeMs) {
+                                        // Room should be unlocked! Insert an in-app notification if we haven't recently
+                                        val existing = notifications.value.any { 
+                                            it.title.contains(t.name) && it.type == "Room Unlocked"
+                                        }
+                                        if(!existing) {
+                                            repository.insertNotification(Notification(
+                                                userId = cUser.id,
+                                                title = "Room Unlocked: ${t.name}!",
+                                                message = "Your match starts in less than 10 minutes. Click to view Room ID & Password.",
+                                                date = getCurrentDateString(),
+                                                time = getCurrentTimeString(),
+                                                type = "Room Unlocked"
+                                            ))
+                                        }
+                                    }
+                                }
+                            } catch (e: Exception) {}
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun updateSetting(key: String, value: String, onComplete: ((Boolean) -> Unit)? = null) {
@@ -230,72 +271,96 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun registerUser(user: User, onResult: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
+            // First check local
             val existing = repository.getUserByEmail(user.email)
             if (existing != null) {
-                triggerToast("Email already registered!")
+                triggerToast("Email already registered locally!")
                 onResult(false)
                 return@launch
             }
 
-            // Insert new user
-            val userId = repository.insertUser(user)
-            if (userId > 0) {
-                val registeredUser = repository.getUserById(userId.toInt())
-                if (registeredUser != null) {
-                    // Initialize default Daily Tasks for user
-                    initializeDailyTasks(userId.toInt())
-                    
-                    // Create dynamic greeting notification
-                    repository.insertNotification(Notification(
-                        userId = userId.toInt(),
-                        title = "Welcome to Anu Battle!",
-                        message = "Congratulations! You have received a 100 Main and 10 Bonus wallet starter credit.",
-                        date = getCurrentDateString(),
-                        time = getCurrentTimeString(),
-                        type = "Announcement"
-                    ))
+            // Check Firebase RTDB
+            val dbRef = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users")
+            val emailKey = user.email.replace(".", "_")
+            
+            dbRef.child(emailKey).get().addOnSuccessListener { snapshot ->
+                if (snapshot.exists()) {
+                    triggerToast("Email already registered online!")
+                    onResult(false)
+                } else {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        // Insert new user locally
+                        val userId = repository.insertUser(user)
+                        if (userId > 0) {
+                            val registeredUser = repository.getUserById(userId.toInt())
+                            if (registeredUser != null) {
+                                // Initialize default Daily Tasks for user
+                                initializeDailyTasks(userId.toInt())
+                                
+                                // Sync user to Firebase
+                                dbRef.child(emailKey).setValue(registeredUser)
 
-                    // If referred, credit bonus reward
-                    if (!user.referredBy.isNullOrEmpty()) {
-                        val referrer = repository.getUserByReferralCode(user.referredBy)
-                        if (referrer != null) {
-                            // Credit referrer 15.0 Main Wallet + load
-                            val updatedReferrer = referrer.copy(
-                                mainWallet = referrer.mainWallet + 15.0,
-                                referralCount = referrer.referralCount + 1,
-                                coins = referrer.coins + 20
-                            )
-                            repository.updateUser(updatedReferrer)
-                            repository.insertTransactionHistory(TransactionHistory(
-                                userId = referrer.id,
-                                amount = 15.0,
-                                type = "Referral Bonus",
-                                walletType = "Main Wallet",
-                                status = "Completed",
-                                description = "Referral code used by ${user.username}",
-                                date = getCurrentDateString(),
-                                time = getCurrentTimeString()
-                            ))
-                            repository.insertNotification(Notification(
-                                userId = referrer.id,
-                                title = "Referral Reward Credited",
-                                message = "You received 15.0 PKR and 20 Coins because ${user.username} joined using your code.",
-                                date = getCurrentDateString(),
-                                time = getCurrentTimeString(),
-                                type = "Rewards Available"
-                            ))
+                                // Create dynamic greeting notification
+                                repository.insertNotification(Notification(
+                                    userId = userId.toInt(),
+                                    title = "Welcome to Anu Battle!",
+                                    message = "Congratulations! You have received a 100 Main and 10 Bonus wallet starter credit.",
+                                    date = getCurrentDateString(),
+                                    time = getCurrentTimeString(),
+                                    type = "Announcement"
+                                ))
+
+                                // If referred, credit bonus reward (Skipped RTDB sync for referrer for brevity, ideally should)
+                                if (!user.referredBy.isNullOrEmpty()) {
+                                    val referrer = repository.getUserByReferralCode(user.referredBy)
+                                    if (referrer != null) {
+                                        // Credit referrer 15.0 Main Wallet + load
+                                        val updatedReferrer = referrer.copy(
+                                            mainWallet = referrer.mainWallet + 15.0,
+                                            referralCount = referrer.referralCount + 1,
+                                            coins = referrer.coins + 20
+                                        )
+                                        repository.updateUser(updatedReferrer)
+                                        repository.insertTransactionHistory(TransactionHistory(
+                                            userId = referrer.id,
+                                            amount = 15.0,
+                                            type = "Referral Bonus",
+                                            walletType = "Main Wallet",
+                                            status = "Completed",
+                                            description = "Referral code used by ${user.username}",
+                                            date = getCurrentDateString(),
+                                            time = getCurrentTimeString()
+                                        ))
+                                        repository.insertNotification(Notification(
+                                            userId = referrer.id,
+                                            title = "Referral Reward Credited",
+                                            message = "You received 15.0 PKR and 20 Coins because ${user.username} joined using your code.",
+                                            date = getCurrentDateString(),
+                                            time = getCurrentTimeString(),
+                                            type = "Rewards Available"
+                                        ))
+                                        
+                                        // Sync referrer back to RTDB
+                                        val refEmailKey = referrer.email.replace(".", "_")
+                                        dbRef.child(refEmailKey).setValue(updatedReferrer)
+                                    }
+                                }
+
+                                _currentUser.value = registeredUser
+                                sharedPrefs.edit().putInt("logged_in_user_id", registeredUser.id).apply()
+                                loadUserData(registeredUser.id)
+                                _navigationStack.value = listOf(Screen.Dashboard)
+                                triggerToast("Registration Successful!")
+                                onResult(true)
+                            }
+                        } else {
+                            triggerToast("Error in registration! Try again.")
+                            onResult(false)
                         }
                     }
-
-                    _currentUser.value = registeredUser
-                    sharedPrefs.edit().putInt("logged_in_user_id", registeredUser.id).apply()
-                    loadUserData(registeredUser.id)
-                    _navigationStack.value = listOf(Screen.Dashboard)
-                    triggerToast("Registration Successful!")
-                    onResult(true)
                 }
-            } else {
-                triggerToast("Error in registration! Try again.")
+            }.addOnFailureListener {
+                triggerToast("Network Error checking existing user")
                 onResult(false)
             }
         }
@@ -303,29 +368,139 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loginUser(email: String, password: String, rememberMe: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
-            val user = repository.getUserByEmail(email)
-            if (user == null) {
-                triggerToast("Account does not exist!")
-                return@launch
+            val emailKey = email.replace(".", "_")
+            val dbRef = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(emailKey)
+            
+            dbRef.get().addOnSuccessListener { snapshot ->
+                if (snapshot.exists()) {
+                    val onlineUserMap = snapshot.value as? Map<String, Any>
+                    val onlinePassword = onlineUserMap?.get("password")?.toString() ?: ""
+                    
+                    if (onlinePassword != password) {
+                        triggerToast("Incorrect password. Please try again.")
+                        return@addOnSuccessListener
+                    }
+                    
+                    val isBanned = (onlineUserMap?.get("isBanned") as? Boolean) ?: false
+                    if (isBanned) {
+                        triggerToast("Your account is banned. Contact support.")
+                        return@addOnSuccessListener
+                    }
+                    
+                    viewModelScope.launch(Dispatchers.IO) {
+                        // Extract fields and sync to local DB
+                        val id = (onlineUserMap?.get("id") as? Long)?.toInt() ?: 0
+                        val username = onlineUserMap?.get("username")?.toString() ?: ""
+                        val phone = onlineUserMap?.get("phoneNumber")?.toString() ?: ""
+                        val mainWallet = (onlineUserMap?.get("mainWallet") as? Number)?.toDouble() ?: 0.0
+                        val bonusWallet = (onlineUserMap?.get("bonusWallet") as? Number)?.toDouble() ?: 0.0
+                        val winningWallet = (onlineUserMap?.get("winningWallet") as? Number)?.toDouble() ?: 0.0
+                        val coins = (onlineUserMap?.get("coins") as? Number)?.toInt() ?: 0
+                        val profilePic = onlineUserMap?.get("profilePicture")?.toString() ?: ""
+                        val refCode = onlineUserMap?.get("referralCode")?.toString() ?: ""
+                        val refBy = onlineUserMap?.get("referredBy")?.toString() ?: ""
+                        
+                        val userObj = User(
+                            id = id,
+                            username = username,
+                            email = email,
+                            password = password,
+                            mainWallet = mainWallet,
+                            bonusWallet = bonusWallet,
+                            winningWallet = winningWallet,
+                            coins = coins,
+                            isBanned = isBanned,
+                            profileImage = profilePic,
+                            referralCode = refCode,
+                            referredBy = refBy,
+                            referralCount = (onlineUserMap?.get("referralCount") as? Number)?.toInt() ?: 0
+                        )
+                        
+                        // Insert or Update local db
+                        val existing = repository.getUserByEmail(email)
+                        if (existing == null) {
+                            repository.insertUser(userObj)
+                            initializeDailyTasks(userObj.id)
+                        } else {
+                            repository.updateUser(userObj)
+                        }
+                        
+                        _currentUser.value = userObj
+                        if (rememberMe) {
+                            sharedPrefs.edit().putInt("logged_in_user_id", userObj.id).apply()
+                        } else {
+                            sharedPrefs.edit().remove("logged_in_user_id").apply()
+                        }
+                        
+                        loadUserData(userObj.id)
+                        _navigationStack.value = listOf(Screen.Dashboard)
+                        triggerToast("Logged in completely online!")
+                    }
+                } else {
+                    triggerToast("Account does not exist!")
+                }
+            }.addOnFailureListener {
+                triggerToast("Network Error logging in")
             }
-            if (user.password != password) {
-                triggerToast("Incorrect password. Please try again.")
-                return@launch
-            }
-            if (user.isBanned) {
-                triggerToast("Your account is banned. Contact support.")
-                return@launch
-            }
-
-            _currentUser.value = user
-            sharedPrefs.edit().putInt("logged_in_user_id", user.id).apply()
-            loadUserData(user.id)
-            _navigationStack.value = listOf(Screen.Dashboard)
-            triggerToast("Logged in as ${user.username}")
         }
     }
 
+    private var firebaseUserListener: com.google.firebase.database.ValueEventListener? = null
+    private var currentListeningEmail: String? = null
+
+    private fun startListeningToFirebaseUser(email: String) {
+        if (currentListeningEmail == email) return
+        stopListeningToFirebaseUser()
+        currentListeningEmail = email
+        val emailKey = email.replace(".", "_")
+        val dbRef = com.google.firebase.database.FirebaseDatabase.getInstance()
+            .getReference("users")
+            .child(emailKey)
+
+        firebaseUserListener = object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                if (snapshot.exists()) {
+                    val fbUser = snapshot.getValue(User::class.java)
+                    if (fbUser != null) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val local = repository.getUserByEmail(fbUser.email)
+                            if (local == null) {
+                                repository.insertUser(fbUser)
+                            } else if (local != fbUser) {
+                                repository.updateUser(fbUser)
+                            }
+                        }
+                    }
+                }
+            }
+            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+        }
+        dbRef.addValueEventListener(firebaseUserListener!!)
+    }
+
+    private fun stopListeningToFirebaseUser() {
+        val email = currentListeningEmail ?: return
+        val emailKey = email.replace(".", "_")
+        firebaseUserListener?.let {
+            com.google.firebase.database.FirebaseDatabase.getInstance()
+                .getReference("users")
+                .child(emailKey)
+                .removeEventListener(it)
+        }
+        firebaseUserListener = null
+        currentListeningEmail = null
+    }
+
+    private fun syncUserToFirebase(user: User) {
+        val emailKey = user.email.replace(".", "_")
+        com.google.firebase.database.FirebaseDatabase.getInstance()
+            .getReference("users")
+            .child(emailKey)
+            .setValue(user)
+    }
+
     fun logout() {
+        stopListeningToFirebaseUser()
         sharedPrefs.edit().remove("logged_in_user_id").apply()
         _currentUser.value = null
         _navigationStack.value = listOf(Screen.Login)
@@ -336,8 +511,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // --- LOAD USER SPECIFIC TABLES ---
     private fun loadUserData(userId: Int) {
         viewModelScope.launch {
-            repository.getUserByIdFlow(userId).collect {
-                _currentUser.value = it
+            repository.getUserByIdFlow(userId).collect { user ->
+                _currentUser.value = user
+                if (user != null) {
+                    syncUserToFirebase(user)
+                    startListeningToFirebaseUser(user.email)
+                }
             }
         }
         viewModelScope.launch {
@@ -380,7 +559,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             DailyTask(userId = userId, taskType = "JOIN_TOURNAMENT", title = "Join 1 Tournament", targetCount = 1, currentCount = 0, rewardCoins = 8),
             DailyTask(userId = userId, taskType = "WIN_TOURNAMENT", title = "Win 1 Tournament Match", targetCount = 1, currentCount = 0, rewardCoins = 25),
             DailyTask(userId = userId, taskType = "WATCH_AD_5", title = "Watch 5 Video Ads", targetCount = 5, currentCount = 0, rewardCoins = 15),
-            DailyTask(userId = userId, taskType = "REFER_FRIEND", title = "Refer 1 Friend", targetCount = 1, currentCount = 0, rewardCoins = 15)
+            DailyTask(userId = userId, taskType = "REFER_FRIEND", title = "Refer 1 Friend", targetCount = 1, currentCount = 0, rewardCoins = 15),
+            DailyTask(userId = userId, taskType = "DEPOSIT_1", title = "Complete First Deposit", targetCount = 1, currentCount = 0, rewardCoins = 200)
         )
         repository.insertDailyTasks(tasks)
     }
@@ -603,8 +783,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val user = _currentUser.value ?: return
 
         viewModelScope.launch(Dispatchers.IO) {
-            // Update user coins
-            val updatedUser = user.copy(coins = user.coins + task.rewardCoins)
+            val isPkrReward = task.taskType == "DEPOSIT_1"
+
+            val updatedUser = if (isPkrReward) {
+                user.copy(bonusWallet = user.bonusWallet + task.rewardCoins.toDouble()) // Here rewardCoins signifies PKR amount
+            } else {
+                user.copy(coins = user.coins + task.rewardCoins)
+            }
             repository.updateUser(updatedUser)
 
             // Update task claimed status
@@ -615,14 +800,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 userId = user.id,
                 amount = task.rewardCoins.toDouble(),
                 type = "Task Reward",
-                walletType = "Coins",
+                walletType = if (isPkrReward) "Bonus Wallet" else "Coins",
                 status = "Completed",
                 description = "Completed Daily Task: ${task.title}",
                 date = getCurrentDateString(),
                 time = getCurrentTimeString()
             ))
 
-            triggerToast("Claimed ${task.rewardCoins} Coins for Daily Task!")
+            val rewardStr = if (isPkrReward) "${task.rewardCoins} PKR Bonus" else "${task.rewardCoins} Coins"
+            triggerToast("Claimed $rewardStr for Daily Task!")
         }
     }
 
@@ -1101,6 +1287,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     mainWallet = user.mainWallet + req.amount
                 ))
 
+                // Check and Increment Deposit Tasks 
+                incrementTaskProgress(user.id, "DEPOSIT_1", 1)
+
                 // Insert notifications
                 repository.insertNotification(Notification(
                     userId = user.id,
@@ -1257,10 +1446,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val list = repository.getAllTournamentsList()
             if (list.isEmpty()) {
                 // Seed settings
-                repository.insertSetting(AppSetting("app_name", "T2 Coin"))
-                repository.insertSetting(AppSetting("support_contact", "support@t2coin.com"))
+                repository.insertSetting(AppSetting("app_name", "Anu Battle"))
+                repository.insertSetting(AppSetting("support_contact", "support@anubattle.com"))
                 repository.insertSetting(AppSetting("referral_bonus", "15"))
-                repository.insertSetting(AppSetting("unity_game_id", "5855521"))
+                repository.insertSetting(AppSetting("unity_game_id", "5763487"))
                 repository.insertSetting(AppSetting("unity_ads_enabled", "true"))
                 repository.insertSetting(AppSetting("unity_test_mode", "false"))
                 repository.insertSetting(AppSetting("unity_interstitial_id", "Interstitial_Android"))

@@ -52,17 +52,26 @@ fun DashboardScreen(viewModel: AppViewModel) {
 
     Scaffold(
         topBar = {
-            DashboardHeader(
-                currentUser = currentUser,
-                onNotificationClick = { showNotificationsDialog = true },
-                onSettingClick = { viewModel.toggleTheme() },
-                onAdminClick = { viewModel.navigateTo(Screen.AdminLogin) }
-            )
+            Column {
+                DashboardHeader(
+                    currentUser = currentUser,
+                    onNotificationClick = { showNotificationsDialog = true },
+                    onSettingClick = { viewModel.toggleTheme() },
+                    onAdminClick = { viewModel.navigateTo(Screen.AdminLogin) }
+                )
+                val bannerId = viewModel.getSettingValue("unity_banner_id", "Banner_Android")
+                UnityBannerAd(adUnitId = bannerId, modifier = Modifier.fillMaxWidth())
+            }
         },
         bottomBar = {
+            val context = androidx.compose.ui.platform.LocalContext.current as? com.example.MainActivity
             DashboardBottomBar(
                 currentTab = currentTab,
-                onTabSelect = { viewModel.navigateToTab(it) }
+                onTabSelect = { 
+                    viewModel.navigateToTab(it)
+                    // Try showing interstitial on tab transitions
+                    context?.showInterstitialAd(viewModel.getSettingValue("unity_interstitial_id", "Interstitial_Android"))
+                }
             )
         }
     ) { innerPadding ->
@@ -934,6 +943,7 @@ fun StoreScreenContent(viewModel: AppViewModel) {
 
     if (showDepositRequestDialog) {
         DepositRequestModal(
+            viewModel = viewModel,
             onDismiss = { showDepositRequestDialog = false },
             onSubmit = { amount, method, txId, screenshotUrl ->
                 viewModel.submitDepositRequest(amount, method, txId, screenshotUrl)
@@ -1118,7 +1128,7 @@ fun RewardsScreenContent(viewModel: AppViewModel) {
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Reward: ${task.rewardCoins} Coins",
+                                    text = if (task.taskType == "DEPOSIT_1") "Reward: ${task.rewardCoins} PKR (Bonus Wallet)" else "Reward: ${task.rewardCoins} Coins",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = Color(0xFFF59E0B)
@@ -1546,9 +1556,16 @@ fun TournamentCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text("PRIZE POOL", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-                    Text("Rs.${tournament.prizePool}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                if (tournament.prizePool > 0.0) {
+                    Column {
+                        Text("PRIZE POOL", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                        Text("Rs.${tournament.prizePool}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                } else {
+                    Column {
+                        Text("TYPE", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                        Text(tournament.type, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF59E0B))
+                    }
                 }
 
                 Column {
@@ -1648,15 +1665,16 @@ fun NotificationTray(
 }
 
 @Composable
-fun DepositRequestModal(onDismiss: () -> Unit, onSubmit: (Double, String, String, String?) -> Unit) {
+fun DepositRequestModal(viewModel: AppViewModel, onDismiss: () -> Unit, onSubmit: (Double, String, String, String?) -> Unit) {
     var amount by remember { mutableStateOf("") }
     var txId by remember { mutableStateOf("") }
-    var scaleMethod by remember { mutableStateOf("UPI / QR Code") }
+    var scaleMethod by remember { mutableStateOf("EasyPaisa") }
     
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
     var uploadedUrl by remember { mutableStateOf<String?>(null) }
     var isUploading by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1675,8 +1693,74 @@ fun DepositRequestModal(onDismiss: () -> Unit, onSubmit: (Double, String, String
         onDismissRequest = onDismiss,
         title = { Text("Submit Deposit Proof", fontSize = 18.sp, fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("QR Code: SCAN UPI AND UPLOAD PROOF.\nEnter deposit details for Admin verification.", fontSize = 12.sp)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
+                val epName = viewModel.getSettingValue("payment_easypaisa_name", "Ahsan")
+                val epNum = viewModel.getSettingValue("payment_easypaisa_number", "03001234567")
+                val jcName = viewModel.getSettingValue("payment_jazzcash_name", "Anu Battle")
+                val jcNum = viewModel.getSettingValue("payment_jazzcash_number", "03001234568")
+
+                Text("Please transfer amount to one of the accounts below.", fontSize = 12.sp, color = Color.LightGray)
+                
+                // EasyPaisa Layout
+                Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text("EasyPaisa", fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                Text(epName, fontSize = 12.sp, color = Color.White)
+                                Text(epNum, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                            TextButton(
+                                onClick = { 
+                                    clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(epNum))
+                                },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text("COPY", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                            }
+                        }
+                    }
+                }
+
+                // JazzCash Layout
+                Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text("JazzCash", fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                Text(jcName, fontSize = 12.sp, color = Color.White)
+                                Text(jcNum, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                            TextButton(
+                                onClick = { 
+                                    clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(jcNum))
+                                },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text("COPY", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Text("Select Method Used:", fontSize = 12.sp, color = Color.White)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { scaleMethod = "EasyPaisa" },
+                        colors = ButtonDefaults.buttonColors(containerColor = if(scaleMethod=="EasyPaisa") Color(0xFFF59E0B) else Color.DarkGray),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("EasyPaisa", fontSize = 10.sp, color = if(scaleMethod=="EasyPaisa") Color.Black else Color.White) }
+                    
+                    Button(
+                        onClick = { scaleMethod = "JazzCash" },
+                        colors = ButtonDefaults.buttonColors(containerColor = if(scaleMethod=="JazzCash") Color(0xFFF59E0B) else Color.DarkGray),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("JazzCash", fontSize = 10.sp, color = if(scaleMethod=="JazzCash") Color.Black else Color.White) }
+                }
 
                 OutlinedTextField(
                     value = amount,
