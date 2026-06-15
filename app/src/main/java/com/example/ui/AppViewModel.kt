@@ -144,6 +144,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         // Sync and pull live tournaments, banners, and settings from Firebase RTDB
         syncFromFirebase()
+        startRealTimeSync()
 
         // Periodic check for room unlocks for notifications
         viewModelScope.launch(Dispatchers.IO) {
@@ -389,14 +390,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     
                     viewModelScope.launch(Dispatchers.IO) {
                         // Extract fields and sync to local DB
-                        val id = (onlineUserMap?.get("id") as? Long)?.toInt() ?: 0
+                        val id = (onlineUserMap?.get("id") as? Number)?.toInt() ?: 0
                         val username = onlineUserMap?.get("username")?.toString() ?: ""
                         val phone = onlineUserMap?.get("phoneNumber")?.toString() ?: ""
                         val mainWallet = (onlineUserMap?.get("mainWallet") as? Number)?.toDouble() ?: 0.0
                         val bonusWallet = (onlineUserMap?.get("bonusWallet") as? Number)?.toDouble() ?: 0.0
                         val winningWallet = (onlineUserMap?.get("winningWallet") as? Number)?.toDouble() ?: 0.0
                         val coins = (onlineUserMap?.get("coins") as? Number)?.toInt() ?: 0
-                        val profilePic = onlineUserMap?.get("profilePicture")?.toString() ?: ""
+                        val profilePic = (onlineUserMap?.get("profileImage") ?: onlineUserMap?.get("profilePicture"))?.toString() ?: "avatar_1"
                         val refCode = onlineUserMap?.get("referralCode")?.toString() ?: ""
                         val refBy = onlineUserMap?.get("referredBy")?.toString() ?: ""
                         
@@ -460,15 +461,57 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         firebaseUserListener = object : com.google.firebase.database.ValueEventListener {
             override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
                 if (snapshot.exists()) {
-                    val fbUser = snapshot.getValue(User::class.java)
-                    if (fbUser != null) {
-                        viewModelScope.launch(Dispatchers.IO) {
-                            val local = repository.getUserByEmail(fbUser.email)
-                            if (local == null) {
-                                repository.insertUser(fbUser)
-                            } else if (local != fbUser) {
-                                repository.updateUser(fbUser)
+                    val onlineUserMap = snapshot.value as? Map<String, Any?>
+                    if (onlineUserMap != null) {
+                        try {
+                            val id = (onlineUserMap["id"] as? Number)?.toInt() ?: 0
+                            val username = onlineUserMap["username"]?.toString() ?: ""
+                            val emailVal = onlineUserMap["email"]?.toString() ?: email
+                            val password = onlineUserMap["password"]?.toString() ?: ""
+                            val mainWallet = (onlineUserMap["mainWallet"] as? Number)?.toDouble() ?: 0.0
+                            val bonusWallet = (onlineUserMap["bonusWallet"] as? Number)?.toDouble() ?: 0.0
+                            val winningWallet = (onlineUserMap["winningWallet"] as? Number)?.toDouble() ?: 0.0
+                            val coins = (onlineUserMap["coins"] as? Number)?.toInt() ?: 0
+                            val profilePic = (onlineUserMap["profileImage"] ?: onlineUserMap["profilePicture"])?.toString() ?: "avatar_1"
+                            val refCode = onlineUserMap["referralCode"]?.toString() ?: ""
+                            val refBy = onlineUserMap["referredBy"]?.toString()
+                            val referralCount = (onlineUserMap["referralCount"] as? Number)?.toInt() ?: 0
+                            val isBanned = (onlineUserMap["isBanned"] as? Boolean) ?: false
+                            val isVerified = (onlineUserMap["isVerified"] as? Boolean) ?: false
+                            val matchesPlayed = (onlineUserMap["matchesPlayed"] as? Number)?.toInt() ?: 0
+                            val matchesWon = (onlineUserMap["matchesWon"] as? Number)?.toInt() ?: 0
+                            val totalEarnings = (onlineUserMap["totalEarnings"] as? Number)?.toDouble() ?: 0.0
+
+                            val fbUser = User(
+                                id = id,
+                                username = username,
+                                email = emailVal,
+                                password = password,
+                                profileImage = profilePic,
+                                isBanned = isBanned,
+                                referralCode = refCode,
+                                referredBy = refBy,
+                                isVerified = isVerified,
+                                mainWallet = mainWallet,
+                                winningWallet = winningWallet,
+                                bonusWallet = bonusWallet,
+                                coins = coins,
+                                matchesPlayed = matchesPlayed,
+                                matchesWon = matchesWon,
+                                totalEarnings = totalEarnings,
+                                referralCount = referralCount
+                            )
+
+                            viewModelScope.launch(Dispatchers.IO) {
+                                val local = repository.getUserByEmail(fbUser.email)
+                                if (local == null) {
+                                    repository.insertUser(fbUser)
+                                } else if (local != fbUser) {
+                                    repository.updateUser(fbUser)
+                                }
                             }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
                     }
                 }
@@ -1671,6 +1714,65 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 e.printStackTrace()
             }
         }
+    }
+
+    private fun startRealTimeSync() {
+        val rootRef = com.google.firebase.database.FirebaseDatabase.getInstance().reference
+
+        // 1. Listen to 'settings' changes
+        rootRef.child("settings").addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                if (snapshot.exists()) {
+                    val map = snapshot.value as? Map<*, *> ?: return
+                    viewModelScope.launch(Dispatchers.IO) {
+                        for ((key, value) in map) {
+                            if (key != null && value != null) {
+                                repository.insertSetting(AppSetting(key.toString(), value.toString()))
+                            }
+                        }
+                    }
+                }
+            }
+            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+        })
+
+        // 2. Listen to 'promotions' changes
+        rootRef.child("promotions").addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                if (snapshot.exists()) {
+                    val map = snapshot.value as? Map<*, *> ?: return
+                    viewModelScope.launch(Dispatchers.IO) {
+                        for ((fbId, data) in map) {
+                            if (fbId != null && data is Map<*, *>) {
+                                @Suppress("UNCHECKED_CAST")
+                                val banner = mapFirebaseBanner(fbId.toString(), data as Map<String, Any?>)
+                                repository.insertBanner(banner)
+                            }
+                        }
+                    }
+                }
+            }
+            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+        })
+
+        // 3. Listen to 'tournaments' changes
+        rootRef.child("tournaments").addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                if (snapshot.exists()) {
+                    val map = snapshot.value as? Map<*, *> ?: return
+                    viewModelScope.launch(Dispatchers.IO) {
+                        for ((fbId, data) in map) {
+                            if (fbId != null && data is Map<*, *>) {
+                                @Suppress("UNCHECKED_CAST")
+                                val tournament = mapFirebaseTournament(fbId.toString(), data as Map<String, Any?>)
+                                repository.insertTournament(tournament)
+                            }
+                        }
+                    }
+                }
+            }
+            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+        })
     }
 
     private fun jsonObjectToMap(jsonObject: JSONObject): Map<String, Any?> {
