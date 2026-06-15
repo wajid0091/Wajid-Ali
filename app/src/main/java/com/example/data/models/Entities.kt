@@ -46,7 +46,8 @@ data class Tournament(
     val roomId: String = "",
     val roomPassword: String = "",
     val visibilityMode: String = "Scheduled", // "Permanent", "Scheduled"
-    val isRoomVisibleManuallyOverride: Boolean = false
+    val isRoomVisibleManuallyOverride: Boolean = false,
+    val imageUrl: String = ""
 )
 
 @Entity(tableName = "joined_tournaments")

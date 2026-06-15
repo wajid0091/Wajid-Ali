@@ -21,7 +21,7 @@ import com.example.data.models.*
         AppSetting::class,
         CoinPackage::class
     ],
-    version = 1,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

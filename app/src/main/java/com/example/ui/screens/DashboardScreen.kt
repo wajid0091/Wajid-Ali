@@ -19,6 +19,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -389,6 +391,7 @@ fun HomeScreenContent(viewModel: AppViewModel) {
         Spacer(modifier = Modifier.height(30.dp))
     }
 }
+
 
 @Composable
 fun HomeScreenBannerSlider(banners: List<BannerBanner>) {
@@ -796,6 +799,83 @@ fun StoreScreenContent(viewModel: AppViewModel) {
             }
         }
 
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // --- COINS TO PKR EXCHANGE CONVERTER PANEL ---
+        val exchangeRateStr = viewModel.getSettingValue("coins_per_pkr", "10")
+        val exchangeRate = exchangeRateStr.toDoubleOrNull() ?: 10.0
+
+        var coinsInput by remember { mutableStateOf("") }
+        val coinsToConvert = coinsInput.toIntOrNull() ?: 0
+        val pkrCalculated = if (exchangeRate > 0) coinsToConvert / exchangeRate else 0.0
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Convert Coins to PKR Wallet",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Current Rate: $exchangeRate Coins = Rs.1.0 PKR. Convert your earnings instantly into real pocket cash!",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = coinsInput,
+                        onValueChange = { coinsInput = it },
+                        label = { Text("Enter Coins") },
+                        placeholder = { Text("e.g. 100") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        ),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    Button(
+                        onClick = {
+                            viewModel.convertCoinsToPkr(coinsToConvert)
+                            coinsInput = ""
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.height(56.dp)
+                    ) {
+                        Text("EXCHANGE", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+
+                if (coinsToConvert > 0) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "You will receive: Rs.${String.format(java.util.Locale.US, "%.2f", pkrCalculated)} in Main Wallet balance",
+                        color = Color(0xFF10B981),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
         if (userDeposits.isNotEmpty() || userWithdrawals.isNotEmpty()) {
             Spacer(modifier = Modifier.height(24.dp))
             Text(
@@ -876,6 +956,7 @@ fun StoreScreenContent(viewModel: AppViewModel) {
 @Composable
 fun RewardsScreenContent(viewModel: AppViewModel) {
     val dailyTasks by viewModel.userDailyTasks.collectAsState()
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -942,7 +1023,61 @@ fun RewardsScreenContent(viewModel: AppViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        // --- DIRECT WATCH AD AND EARN CAMPAIGN ---
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+            border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.3f))
+        ) {
+            Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Watch Unity Ads & Earn",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFFF59E0B)
+                    )
+                    Text(
+                        "Watch a 10s video ad to instantly receive +2 Coins directly inside your wallet!",
+                        fontSize = 11.sp,
+                        color = Color.LightGray
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        val activity = context as? com.example.MainActivity
+                        if (activity != null) {
+                            val rewardedId = viewModel.getSettingValue("unity_rewarded_id", "Rewarded_Android")
+                            activity.showRewardedAd(rewardedId) {
+                                val cUser = viewModel.currentUser.value
+                                if (cUser != null) {
+                                    viewModel.incrementTaskProgress(cUser.id, "WATCH_AD_5", 1)
+                                    viewModel.creditDirectCoins(2, "Unity Video Ad Reward")
+                                }
+                            }
+                        } else {
+                            viewModel.triggerToast("Cannot show ad context")
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = "Play ad icon", tint = Color.Black, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("PLAY (+2)", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
 
         Text(
             text = "Daily Battle Assignments",
@@ -1010,12 +1145,34 @@ fun RewardsScreenContent(viewModel: AppViewModel) {
                                     Text("Claim Reward", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             } else {
-                                Text(
-                                    text = "${task.currentCount}/${task.targetCount}",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(0.6f)
-                                )
+                                if (task.taskType == "WATCH_AD_5") {
+                                    Button(
+                                        onClick = {
+                                            viewModel.playSimulatedAd {
+                                                val cUser = viewModel.currentUser.value
+                                                if (cUser != null) {
+                                                    viewModel.incrementTaskProgress(cUser.id, "WATCH_AD_5", 1)
+                                                    viewModel.creditDirectCoins(2, "Unity Video Ad Reward")
+                                                }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(32.dp)
+                                    ) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.Black)
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text("Play (${task.currentCount}/${task.targetCount})", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                                    }
+                                } else {
+                                    Text(
+                                        text = "${task.currentCount}/${task.targetCount}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(0.6f)
+                                    )
+                                }
                             }
                         }
 
@@ -1284,18 +1441,36 @@ fun TournamentCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(100.dp)
+                    .height(115.dp)
             ) {
-                val gradientType = when (tournament.type) {
-                    "Clash Squad" -> Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF00497D)))
-                    "Battle Royale" -> Brush.linearGradient(listOf(Color(0xFF00497D), Color(0xFF425E7B)))
-                    else -> Brush.linearGradient(listOf(MaterialTheme.colorScheme.secondary, Color(0xFF1B2E3C)))
+                if (tournament.imageUrl.isNotEmpty()) {
+                    AsyncImage(
+                        model = tournament.imageUrl,
+                        contentDescription = "Tournament Banner",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color.Black.copy(alpha = 0.2f), Color.Black.copy(alpha = 0.75f))
+                                )
+                            )
+                    )
+                } else {
+                    val gradientType = when (tournament.type) {
+                        "Clash Squad" -> Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF00497D)))
+                        "Battle Royale" -> Brush.linearGradient(listOf(Color(0xFF00497D), Color(0xFF425E7B)))
+                        else -> Brush.linearGradient(listOf(MaterialTheme.colorScheme.secondary, Color(0xFF1B2E3C)))
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(gradientType)
+                    )
                 }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(gradientType)
-                )
 
                 Box(
                     modifier = Modifier

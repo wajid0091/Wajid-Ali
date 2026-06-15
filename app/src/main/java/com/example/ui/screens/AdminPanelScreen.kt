@@ -394,6 +394,21 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
         var roomId by remember { mutableStateOf("") }
         var roomPwd by remember { mutableStateOf("") }
         var visMode by remember { mutableStateOf("Scheduled") } // Permanent vs Scheduled
+        var imageUrl by remember { mutableStateOf("") }
+        var isUploading by remember { mutableStateOf(false) }
+        val context = LocalContext.current
+
+        val galleryLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetContent()
+        ) { uri: Uri? ->
+            if (uri != null) {
+                ImageUploader.uploadToImgBB(context, uri, onProgress = { isUploading = it }) { url ->
+                    if (url != null) {
+                        imageUrl = url
+                    }
+                }
+            }
+        }
 
         AlertDialog(
             onDismissRequest = { showCreateDialog = false },
@@ -404,6 +419,50 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
                     modifier = Modifier.verticalScroll(rememberScrollState())
                 ) {
                     OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Lobby Name") })
+                    
+                    Text("Select or upload tournament banner image:", fontSize = 11.sp, color = Color.Gray)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = imageUrl, 
+                            onValueChange = { imageUrl = it }, 
+                            label = { Text("Banner Image URL") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = { galleryLauncher.launch("image/*") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF374151)),
+                            contentPadding = PaddingValues(horizontal = 12.dp)
+                        ) {
+                            Text("CHOOSE FILE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                    if (isUploading) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            CircularProgressIndicator(color = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Uploading to ImgBB...", fontSize = 12.sp, color = Color.Gray)
+                        }
+                    }
+                    if (imageUrl.isNotEmpty()) {
+                        AsyncImage(
+                            model = imageUrl,
+                            contentDescription = "Preview Banner",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(100.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    }
+
                     OutlinedTextField(value = entryFee, onValueChange = { entryFee = it }, label = { Text("Entry Fee (Rs.)") })
                     OutlinedTextField(value = prizePool, onValueChange = { prizePool = it }, label = { Text("Prize Pool (Rs.)") })
                     OutlinedTextField(value = slots, onValueChange = { slots = it }, label = { Text("Total Slots size") })
@@ -432,6 +491,7 @@ fun AdminTournamentsSubPanel(viewModel: AppViewModel) {
                             roomId = roomId,
                             roomPassword = roomPwd,
                             visibilityMode = visMode,
+                            imageUrl = imageUrl,
                             description = "Admin assembled tournament for Anu Battle league."
                         )
                         viewModel.adminCreateTournament(newT)
@@ -856,6 +916,7 @@ fun AdminUnityAdsSubPanel(viewModel: AppViewModel) {
     val currentInterstitialId = settingsList.find { it.key == "unity_interstitial_id" }?.value ?: ""
     val currentRewardedId = settingsList.find { it.key == "unity_rewarded_id" }?.value ?: ""
     val currentBannerId = settingsList.find { it.key == "unity_banner_id" }?.value ?: ""
+    val currentCoinsPerPkr = settingsList.find { it.key == "coins_per_pkr" }?.value ?: "10"
 
     // Form fields
     var gameId by remember(currentGameId) { mutableStateOf(currentGameId) }
@@ -864,6 +925,7 @@ fun AdminUnityAdsSubPanel(viewModel: AppViewModel) {
     var interstitialId by remember(currentInterstitialId) { mutableStateOf(currentInterstitialId) }
     var rewardedId by remember(currentRewardedId) { mutableStateOf(currentRewardedId) }
     var bannerId by remember(currentBannerId) { mutableStateOf(currentBannerId) }
+    var coinsPerPkr by remember(currentCoinsPerPkr) { mutableStateOf(currentCoinsPerPkr) }
 
     var isSaving by remember { mutableStateOf(false) }
 
@@ -967,19 +1029,37 @@ fun AdminUnityAdsSubPanel(viewModel: AppViewModel) {
             modifier = Modifier.fillMaxWidth()
         )
 
+        HorizontalDivider(color = Color.Gray.copy(alpha = 0.3f))
+
+        Text("Exchange Rate configuration (Coins -> PKR)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text("Sets how many Coins equal 1 PKR in the user wallet conversion panel.", fontSize = 11.sp, color = Color.Gray)
+
+        OutlinedTextField(
+            value = coinsPerPkr,
+            onValueChange = { coinsPerPkr = it },
+            label = { Text("Exchange Rate: Coins per 1 PKR") },
+            placeholder = { Text("e.g. 10.0") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFF59E0B)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
         Spacer(modifier = Modifier.height(8.dp))
 
         Button(
             onClick = {
                 isSaving = true
                 var count = 0
-                val total = 6
+                val total = 7
                 
                 fun checkComplete() {
                     count++
                     if (count == total) {
                         isSaving = false
-                        viewModel.triggerToast("Unity Ads configuration updated in Firebase RTDB!")
+                        viewModel.triggerToast("Configuration updated inside Live Server successfully!")
                     }
                 }
 
@@ -989,6 +1069,7 @@ fun AdminUnityAdsSubPanel(viewModel: AppViewModel) {
                 viewModel.updateSetting("unity_interstitial_id", interstitialId) { checkComplete() }
                 viewModel.updateSetting("unity_rewarded_id", rewardedId) { checkComplete() }
                 viewModel.updateSetting("unity_banner_id", bannerId) { checkComplete() }
+                viewModel.updateSetting("coins_per_pkr", coinsPerPkr) { checkComplete() }
             },
             enabled = !isSaving,
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),

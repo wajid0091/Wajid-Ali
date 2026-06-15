@@ -1,0 +1,35 @@
+{
+  "project_info": {
+    "project_number": "870298705820",
+    "firebase_url": "https://free-fire-tour-bee66-default-rtdb.firebaseio.com",
+    "project_id": "free-fire-tour-bee66",
+    "storage_bucket": "free-fire-tour-bee66.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:870298705820:android:a5d43854026c35c5643259",
+        "android_client_info": {
+          "package_name": "com.anubattleapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDprE_V7CpvRCUWET1olnvIa4B6SNZfTsM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "870298705820-h0p37h1mu81balb00r4sge16h4vofeol.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

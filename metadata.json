@@ -1,6 +1,6 @@
 {
-  "name": "Anu Battle",
-  "description": "A complete, high-fidelity professional Esports tournament application featuring a local Room database, wallet ledger, daily task boards, and secret CRM admin cockpit.",
+  "name": "T2 Coin",
+  "description": "T2 Coin (T2C) Crypto Mining App with 24-hour mining cycles and rewards.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -93,6 +93,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _userDailyTasks = MutableStateFlow<List<DailyTask>>(emptyList())
     val userDailyTasks: StateFlow<List<DailyTask>> = _userDailyTasks.asStateFlow()
 
+    // Simulated Ad Play State Flows
+    private val _isShowingAd = MutableStateFlow(false)
+    val isShowingAd: StateFlow<Boolean> = _isShowingAd.asStateFlow()
+    
+    private val _adProgressSeconds = MutableStateFlow(10)
+    val adProgressSeconds: StateFlow<Int> = _adProgressSeconds.asStateFlow()
+
     // Admin Specific Lists
     val allUsers: StateFlow<List<User>> = MutableStateFlow(emptyList())
     val allDeposits: StateFlow<List<DepositRequest>> = MutableStateFlow(emptyList())
@@ -311,11 +318,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             _currentUser.value = user
-            if (rememberMe) {
-                sharedPrefs.edit().putInt("logged_in_user_id", user.id).apply()
-            } else {
-                sharedPrefs.edit().remove("logged_in_user_id").apply()
-            }
+            sharedPrefs.edit().putInt("logged_in_user_id", user.id).apply()
             loadUserData(user.id)
             _navigationStack.value = listOf(Screen.Dashboard)
             triggerToast("Logged in as ${user.username}")
@@ -376,6 +379,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             DailyTask(userId = userId, taskType = "PLAY_20", title = "Play Game 20 Minutes", targetCount = 20, currentCount = 0, rewardCoins = 15),
             DailyTask(userId = userId, taskType = "JOIN_TOURNAMENT", title = "Join 1 Tournament", targetCount = 1, currentCount = 0, rewardCoins = 8),
             DailyTask(userId = userId, taskType = "WIN_TOURNAMENT", title = "Win 1 Tournament Match", targetCount = 1, currentCount = 0, rewardCoins = 25),
+            DailyTask(userId = userId, taskType = "WATCH_AD_5", title = "Watch 5 Video Ads", targetCount = 5, currentCount = 0, rewardCoins = 15),
             DailyTask(userId = userId, taskType = "REFER_FRIEND", title = "Refer 1 Friend", targetCount = 1, currentCount = 0, rewardCoins = 15)
         )
         repository.insertDailyTasks(tasks)
@@ -619,6 +623,118 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             ))
 
             triggerToast("Claimed ${task.rewardCoins} Coins for Daily Task!")
+        }
+    }
+
+    // --- COINS CONVERSION AND SIMULATED AD PLAY SYSTEMS ---
+    fun getSettingValue(key: String, defaultValue: String): String {
+        return allSettings.value.find { it.key == key }?.value ?: defaultValue
+    }
+
+    fun convertCoinsToPkr(coinsToConvert: Int) {
+        val user = _currentUser.value ?: run {
+            triggerToast("Please login first!")
+            return
+        }
+        
+        if (coinsToConvert <= 0) {
+            triggerToast("Please enter a valid amount of Coins!")
+            return
+        }
+        
+        if (user.coins < coinsToConvert) {
+            triggerToast("Insufficient Coins balance!")
+            return
+        }
+        
+        val ratioStr = getSettingValue("coins_per_pkr", "10")
+        val ratio = ratioStr.toDoubleOrNull() ?: 10.0
+        if (ratio <= 0.0) {
+            triggerToast("Invalid conversion ratio configured!")
+            return
+        }
+        
+        val pkrEarned = coinsToConvert / ratio
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            // Deduct coins & credit main wallet PKR
+            val updated = user.copy(
+                coins = user.coins - coinsToConvert,
+                mainWallet = user.mainWallet + pkrEarned
+            )
+            repository.updateUser(updated)
+            
+            // Register matching transactions
+            repository.insertTransactionHistory(TransactionHistory(
+                userId = user.id,
+                amount = -coinsToConvert.toDouble(),
+                type = "Coin Conversion",
+                walletType = "Coins",
+                status = "Completed",
+                description = "Converted $coinsToConvert Coins to Rs.$pkrEarned",
+                date = getCurrentDateString(),
+                time = getCurrentTimeString()
+            ))
+            
+            repository.insertTransactionHistory(TransactionHistory(
+                userId = user.id,
+                amount = pkrEarned,
+                type = "Coin Conversion Credit",
+                walletType = "Main Wallet",
+                status = "Completed",
+                description = "Received wallet credit from coin exchange",
+                date = getCurrentDateString(),
+                time = getCurrentTimeString()
+            ))
+            
+            repository.insertNotification(Notification(
+                userId = user.id,
+                title = "Exchange Succeeded",
+                message = "Converted $coinsToConvert Coins to Rs.${String.format(Locale.US, "%.1f", pkrEarned)} Pocket Balance.",
+                date = getCurrentDateString(),
+                time = getCurrentTimeString(),
+                type = "Rewards Available"
+            ))
+            
+            triggerToast("Successfully converted $coinsToConvert Coins to Rs.${String.format(Locale.US, "%.1f", pkrEarned)}!")
+        }
+    }
+
+    fun playSimulatedAd(onComplete: () -> Unit) {
+        val adsEnabledSetting = getSettingValue("unity_ads_enabled", "false")
+        if (adsEnabledSetting != "true") {
+            triggerToast("Ads are currently locked or disabled by administrator!")
+            return
+        }
+        
+        _isShowingAd.value = true
+        _adProgressSeconds.value = 10
+        
+        viewModelScope.launch(Dispatchers.Main) {
+            while (_adProgressSeconds.value > 0) {
+                kotlinx.coroutines.delay(1000)
+                _adProgressSeconds.value = _adProgressSeconds.value - 1
+            }
+            _isShowingAd.value = false
+            onComplete()
+        }
+    }
+
+    fun creditDirectCoins(coinsAmt: Int, reason: String) {
+        val user = _currentUser.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateUser(user.copy(coins = user.coins + coinsAmt))
+            repository.insertTransactionHistory(TransactionHistory(
+                userId = user.id,
+                amount = coinsAmt.toDouble(),
+                type = "Ad Reward",
+                walletType = "Coins",
+                status = "Completed",
+                description = "$reason: Added $coinsAmt Coins",
+                date = getCurrentDateString(),
+                time = getCurrentTimeString()
+            ))
+            triggerToast("Rewarded: $coinsAmt Coins added!")
         }
     }
 
@@ -907,22 +1023,50 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // -- Tournament Management --
     fun adminCreateTournament(tournament: Tournament) {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.insertTournament(tournament)
-            triggerToast("Tournament Created: ${tournament.name}")
+            val insertedId = repository.insertTournament(tournament)
+            triggerToast("Tournament Saved Locally!")
+            
+            // Sync to Firebase RTDB using SDK
+            try {
+                val dbRef = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("tournaments")
+                val fbId = "tour_$insertedId"
+                dbRef.child(fbId).setValue(tournament.copy(id = insertedId.toInt()))
+                triggerToast("Tournament Synced with Live Server!")
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
     fun adminUpdateTournament(tournament: Tournament) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.updateTournament(tournament)
-            triggerToast("Tournament Updated: ${tournament.name}")
+            triggerToast("Tournament Updated Locally!")
+            
+            // Sync update to Firebase RTDB
+            try {
+                val fbId = "tour_${tournament.id}"
+                val dbRef = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("tournaments")
+                dbRef.child(fbId).setValue(tournament)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
     fun adminDeleteTournament(tournament: Tournament) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteTournament(tournament)
-            triggerToast("Tournament Deleted!")
+            triggerToast("Tournament Deleted Locally!")
+            
+            // Sync delete to Firebase RTDB
+            try {
+                val fbId = "tour_${tournament.id}"
+                val dbRef = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("tournaments")
+                dbRef.child(fbId).removeValue()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -1113,9 +1257,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val list = repository.getAllTournamentsList()
             if (list.isEmpty()) {
                 // Seed settings
-                repository.insertSetting(AppSetting("app_name", "Anu Battle"))
-                repository.insertSetting(AppSetting("support_contact", "support@anubattle.com"))
+                repository.insertSetting(AppSetting("app_name", "T2 Coin"))
+                repository.insertSetting(AppSetting("support_contact", "support@t2coin.com"))
                 repository.insertSetting(AppSetting("referral_bonus", "15"))
+                repository.insertSetting(AppSetting("unity_game_id", "5855521"))
+                repository.insertSetting(AppSetting("unity_ads_enabled", "true"))
+                repository.insertSetting(AppSetting("unity_test_mode", "false"))
+                repository.insertSetting(AppSetting("unity_interstitial_id", "Interstitial_Android"))
+                repository.insertSetting(AppSetting("unity_rewarded_id", "Rewarded_Android"))
+                repository.insertSetting(AppSetting("unity_banner_id", "Banner_Android"))
+                repository.insertSetting(AppSetting("coins_per_pkr", "10"))
 
                 // Seed Packages
                 repository.insertCoinPackage(CoinPackage(name = "Coins Pack S", price = 10.0, description = "Credit 20 coins for instant play setup", coins = 20, bonusCoins = 2))
@@ -1387,6 +1538,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val format = (map["tags"] as? List<*>)?.firstOrNull() as? String ?: "Solo"
         val roomId = map["roomId"] as? String ?: ""
         val roomPassword = map["roomPassword"] as? String ?: ""
+        val imageUrl = map["imageUrl"] as? String ?: ""
         
         val localId = Math.abs(fbId.hashCode())
         
@@ -1404,7 +1556,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             format = format,
             description = description,
             roomId = roomId,
-            roomPassword = roomPassword
+            roomPassword = roomPassword,
+            imageUrl = imageUrl
         )
     }
 
